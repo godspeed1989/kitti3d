@@ -8,6 +8,16 @@ import json
 import os.path
 import ipdb
 
+def dict2str(dt):
+    res = ''
+    for key, val in dt.items():
+        if callable(val):
+            v = val.__name__
+        else:
+            v = str(val)
+        res += '%20s: %s\n' % (str(key), str(v))
+    return res
+
 def trasform_label2metric(label, ratio=4, grid_size=0.1, base_height=100):
     '''
     :param label: numpy array of shape [..., 2] of coordinates in label map space

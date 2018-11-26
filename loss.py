@@ -9,7 +9,7 @@ class CustomLoss(nn.Module):
         self.num_classes = num_classes
         self.device = device
 
-    def focal_loss(self, x, y):
+    def focal_loss(self, x, y, eps=1e-5):
         '''Focal loss.
         Args:
           x: (tensor) sized [BatchSize, Height, Width].
@@ -26,7 +26,7 @@ class CustomLoss(nn.Module):
         alpha_t = torch.ones_like(x_t) * alpha
         alpha_t = alpha_t * (2 * y - 1) + (1 - y)
 
-        loss = -alpha_t * (1-x_t)**gamma * x_t.log()
+        loss = -alpha_t * (1-x_t)**gamma * (x_t+eps).log()
 
         return loss.sum()
 
@@ -75,8 +75,7 @@ class CustomLoss(nn.Module):
             loc_loss = loc_loss / (batch_size * image_size)# Pos item is summed over all batch
 
         cls_loss = cls_loss / (batch_size * image_size)
-        print('loc_loss: %.5f | cls_loss: %.5f' % (loc_loss.data, cls_loss.data))
-        return cls_loss + loc_loss
+        return cls_loss + loc_loss, loc_loss.data, cls_loss.data
 
 
 def test():

@@ -5,8 +5,14 @@ import fire
 
 from datagen import get_data_loader
 from model import build_model
-from utils import get_model_name, load_config, plot_bev, plot_label_map
+from utils import get_model_name, load_config, plot_bev, plot_label_map, dict2str
 from postprocess import non_max_suppression
+
+logf = None
+def print_log(string):
+    print(string)
+    if logf is not None:
+        print(string, file=logf)
 
 def validate_batch(net, criterion, batch_size, test_data_loader, device):
     net.eval()
@@ -55,10 +61,11 @@ def train_net(config_name, device):
     train_data_loader, test_data_loader = get_data_loader(batch_size=batch_size, use_npy=config['use_npy'], frame_range=config['frame_range'])
     net, criterion, optimizer, scheduler = build_model(config, device, train=True)
 
+    print_log(dict2str(config))
     if config['resume_training']:
         saved_ckpt_path = get_model_name(config['old_ckpt_name'])
         net.load_state_dict(torch.load(saved_ckpt_path, map_location=device))
-        print("Successfully loaded trained ckpt at {}".format(saved_ckpt_path))
+        print_log("Successfully loaded trained ckpt at {}".format(saved_ckpt_path))
 
     net.train()
     # net.backbone.conv1.register_forward_hook(printnorm)
@@ -69,7 +76,7 @@ def train_net(config_name, device):
         train_loss = 0
         num_samples = 0
         scheduler.step()
-        print("Learning Rate for Epoch {} is {} ".format(epoch + 1, scheduler.get_lr()))
+        print_log("Learning Rate for Epoch {} is {} ".format(epoch + 1, scheduler.get_lr()))
         for i, (input, label_map) in enumerate(train_data_loader):
             input = input.to(device)
             label_map = label_map.to(device)
@@ -77,7 +84,8 @@ def train_net(config_name, device):
             # Forward
             predictions = net(input)
             # ipdb.set_trace()
-            loss = criterion(predictions, label_map)
+            loss, loc_loss, cls_loss = criterion(predictions, label_map)
+            print_log('loc_loss: %.5f | cls_loss: %.5f' % (loc_loss, cls_loss))
             loss.backward()
             optimizer.step()
 
@@ -88,18 +96,18 @@ def train_net(config_name, device):
 
         val_loss = validate_batch(net, criterion, batch_size, test_data_loader, device)
 
-        print("Epoch {}|Time {:.3f}|Training Loss: {}|Validation Loss: {}".format(
+        print_log("Epoch {}|Time {:.3f}|Training Loss: {}|Validation Loss: {}".format(
             epoch + 1, time.time() - start_time, train_loss, val_loss))
 
         if (epoch + 1) == max_epochs or (epoch + 1) % config['save_every'] == 0:
             model_path = get_model_name(config['name']+'__epoch{}'.format(epoch+1))
             torch.save(net.state_dict(), model_path)
-            print("Checkpoint saved at {}".format(model_path))
+            print_log("Checkpoint saved at {}".format(model_path))
 
-    print('Finished Training')
+    print_log('Finished Training')
     end_time = time.time()
     elapsed_time = end_time - start_time
-    print("Total time elapsed: {:.2f} seconds".format(elapsed_time))
+    print_log("Total time elapsed: {:.2f} seconds".format(elapsed_time))
 
 
 def eval_net(config_name, device):
@@ -161,7 +169,7 @@ def eval_net(config_name, device):
         plot_bev(input_np, corners, window_name='Prediction')
         plot_label_map(cls_pred.cpu().numpy())
 
-def test():
+def eval():
     device = torch.device('cpu')
     if torch.cuda.is_available():
         device = torch.device('cuda')
@@ -170,12 +178,16 @@ def test():
     eval_net(name, device)
 
 def train():
+    global logf
     device = torch.device('cpu')
     if torch.cuda.is_available():
         device = torch.device('cuda')
     print('using device', device)
+    timestr = time.strftime("%b-%d_%H-%M-%S", time.localtime())
+    logf = open('train_{}.txt'.format(timestr), 'w')
     name = 'config.json'
     train_net(name, device)
+    logf.close()
 
 if __name__ == "__main__":
     fire.Fire()
