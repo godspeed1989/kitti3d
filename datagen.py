@@ -6,10 +6,12 @@ import fire
 import numpy as np
 import time
 import torch
-from utils import plot_bev, get_points_in_a_rotated_box, plot_label_map, trasform_label2metric
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from scipy.spatial import Delaunay
+
+from utils import plot_bev, get_points_in_a_rotated_box, plot_label_map, trasform_label2metric
+from kitti import read_label_obj, read_calib_file, compute_box_3d, corner_to_center_box3d
 
 KITTI_PATH = '/mine/KITTI_DAT'
 
@@ -136,24 +138,43 @@ class KITTI(Dataset):
 
         return bev_corners, reg_target
 
+    # use calibration to get more accurate car
+    def get_corners_v1(self, obj, calib):
+        # (8, 3)
+        box3d_pts_3d = compute_box_3d(obj,
+            calib['R0_rect'].reshape([3,3]),
+            calib['Tr_velo_to_cam'].reshape([3,4]))
+        bev_corners = box3d_pts_3d[:4, :2]
+        #
+        centers = corner_to_center_box3d(box3d_pts_3d)
+        x = centers[0]
+        y = centers[1]
+        w = centers[3]
+        l = centers[4]
+        yaw = centers[6]
+        reg_target = [np.cos(yaw), np.sin(yaw), x, y, w, l]
+
+        return bev_corners, reg_target
 
     def update_label_map(self, map, bev_corners, reg_target):
-        label_corners = (bev_corners / 4 ) / 0.1
+        label_corners = bev_corners / self.geometry['grid_size'] / self.geometry['ratio']
+        # y to positive
+        # XY in LiDAR <--> YX in label map
         label_corners[:, 1] += self.geometry['label_shape'][0] / 2
 
         points = get_points_in_a_rotated_box(label_corners)
 
         for p in points:
-            label_x = p[0]
-            label_y = p[1]
             metric_x, metric_y = trasform_label2metric(np.array(p),
-                                    ratio=self.geometry['ratio'], grid_size=self.geometry['grid_size'])
+                ratio=self.geometry['ratio'], grid_size=self.geometry['grid_size'])
             actual_reg_target = np.copy(reg_target)
             actual_reg_target[2] = reg_target[2] - metric_x
             actual_reg_target[3] = reg_target[3] - metric_y
             actual_reg_target[4] = np.log(reg_target[4])
             actual_reg_target[5] = np.log(reg_target[5])
 
+            label_x = p[0]
+            label_y = p[1]
             map[label_y, label_x, 0] = 1.0
             map[label_y, label_x, 1:7] = actual_reg_target
 
@@ -172,25 +193,22 @@ class KITTI(Dataset):
 
         '''
         index = self.image_sets[index]
-        f_name = (6-len(index)) * '0' + index + '.txt'
+        f_name = index + '.txt'
         label_path = os.path.join(KITTI_PATH, 'training', 'label_2', f_name)
+        calib_path = os.path.join(KITTI_PATH, 'training', 'calib', f_name)
 
-        object_list = {'Car': 1,'Truck':0, 'DontCare':0, 'Van':0, 'Tram':0}
         label_map = np.zeros(self.geometry['label_shape'], dtype=np.float32)
         label_list = []
-        with open(label_path, 'r') as f:
-            lines = f.readlines() # get rid of \n symbol
-            for line in lines:
-                bbox = []
-                entry = line.split(' ')
-                name = entry[0]
-                if name in list(object_list.keys()):
-                    bbox.append(object_list[name])
-                    bbox.extend([float(e) for e in entry[1:]])
-                    if name == 'Car':
-                        corners, reg_target = self.get_corners(bbox)
-                        self.update_label_map(label_map, corners, reg_target)
-                        label_list.append(corners)
+        objs = read_label_obj(label_path)
+        calib_dict = read_calib_file(calib_path)
+        #
+        object_list = ['Car', 'Truck', 'Van']
+        for obj in objs:
+            if obj.type in object_list:
+                corners, reg_target = self.get_corners_v1(obj, calib_dict)
+                self.update_label_map(label_map, corners, reg_target)
+                label_list.append(corners)
+
         return label_map, label_list
 
     def get_rand_velo(self):
@@ -254,15 +272,14 @@ class KITTI(Dataset):
                         where=intensity_map_count!=0)
         return velo_processed
 
-def get_data_loader(batch_size, use_npy=False, frame_range=10000):
-
+def get_data_loader(batch_size, use_npy=False, frame_range=10000, workers=4):
     train_dataset = KITTI(frame_range, use_npy=use_npy,train=True)
     train_dataset.load_velo()
-    train_data_loader = DataLoader(train_dataset, shuffle=False, batch_size=batch_size)
+    train_data_loader = DataLoader(train_dataset, shuffle=False, batch_size=batch_size, num_workers=workers)
 
     val_dataset = KITTI(frame_range, use_npy=use_npy, train=False)
     val_dataset.load_velo()
-    val_data_loader = DataLoader(val_dataset, batch_size=1)
+    val_data_loader = DataLoader(val_dataset, batch_size=1, num_workers=workers)
 
     return train_data_loader, val_data_loader
 

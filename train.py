@@ -2,32 +2,37 @@ import torch
 import time
 import ipdb
 import fire
+from tqdm import tqdm
 
 from datagen import get_data_loader
 from model import build_model
 from utils import get_model_name, load_config, plot_bev, plot_label_map, dict2str
 from postprocess import non_max_suppression
+from kitti import to_kitti_result_line
 
 logf = None
-def print_log(string):
-    print(string)
+def print_log(string, stdout=True, progress=None):
+    if stdout:
+        print(string)
     if logf is not None:
         print(string, file=logf)
+        logf.flush()
+    if progress is not None:
+        progress.set_description_str(string)
 
-def validate_batch(net, criterion, batch_size, test_data_loader, device):
+def validate_batch(net, criterion, batch_size, val_data_loader, device):
     net.eval()
     val_loss = 0
     num_samples = 0
-    for i, data in enumerate(test_data_loader):
+    for i, data in enumerate(val_data_loader):
         input, label_map = data
         input = input.to(device)
         label_map = label_map.to(device)
         predictions = net(input)
-        loss = criterion(predictions, label_map)
+        loss, loc_loss, cls_loss = criterion(predictions, label_map)
         val_loss += float(loss)
         num_samples += label_map.shape[0]
     return val_loss * batch_size / num_samples
-
 
 def printnorm(self, input, output):
     # input is a tuple of packed inputs
@@ -58,7 +63,7 @@ def printgradnorm(self, grad_input, grad_output):
 
 def train_net(config_name, device):
     config, learning_rate, batch_size, max_epochs = load_config(config_name)
-    train_data_loader, test_data_loader = get_data_loader(batch_size=batch_size, use_npy=config['use_npy'], frame_range=config['frame_range'])
+    train_data_loader, val_data_loader = get_data_loader(batch_size=batch_size, use_npy=config['use_npy'], frame_range=config['frame_range'], workers=config['num_workers'])
     net, criterion, optimizer, scheduler = build_model(config, device, train=True)
 
     print_log(dict2str(config))
@@ -77,6 +82,7 @@ def train_net(config_name, device):
         num_samples = 0
         scheduler.step()
         print_log("Learning Rate for Epoch {} is {} ".format(epoch + 1, scheduler.get_lr()))
+        pbar = tqdm(total=len(train_data_loader), initial=0, desc='train')
         for i, (input, label_map) in enumerate(train_data_loader):
             input = input.to(device)
             label_map = label_map.to(device)
@@ -85,16 +91,17 @@ def train_net(config_name, device):
             predictions = net(input)
             # ipdb.set_trace()
             loss, loc_loss, cls_loss = criterion(predictions, label_map)
-            print_log('loc_loss: %.5f | cls_loss: %.5f' % (loc_loss, cls_loss))
+            print_log('loc_loss %.5f cls_loss %.5f' % (loc_loss, cls_loss), False, pbar)
             loss.backward()
             optimizer.step()
 
             train_loss += float(loss)
             num_samples += label_map.shape[0]
-
+            pbar.update()
+        pbar.close()
         train_loss = train_loss * batch_size/ num_samples
 
-        val_loss = validate_batch(net, criterion, batch_size, test_data_loader, device)
+        val_loss = validate_batch(net, criterion, batch_size, val_data_loader, device)
 
         print_log("Epoch {}|Time {:.3f}|Training Loss: {}|Validation Loss: {}".format(
             epoch + 1, time.time() - start_time, train_loss, val_loss))
@@ -103,33 +110,16 @@ def train_net(config_name, device):
             model_path = get_model_name(config['name']+'__epoch{}'.format(epoch+1))
             torch.save(net.state_dict(), model_path)
             print_log("Checkpoint saved at {}".format(model_path))
-
-    print_log('Finished Training')
     end_time = time.time()
     elapsed_time = end_time - start_time
     print_log("Total time elapsed: {:.2f} seconds".format(elapsed_time))
 
 
-def eval_net(config_name, device):
-    config, _, _, _ = load_config(config_name)
-    net, criterion = build_model(config, device, train=False)
-    model_path = get_model_name(config['name'] + '__epoch10')
-    print('load {}'.format(model_path))
-    net.load_state_dict(torch.load(model_path, map_location=device))
-    # decode center7(cls,r1,r2,x,y,h,w) to corner9(cls,4x2)
-    net.set_decode(True)
-    loader, _ = get_data_loader(batch_size=1, use_npy=config['use_npy'], frame_range=config['frame_range'])
-    net.eval()
-
-    image_id = 25
+def eval_one_sample(net, input, label_map, label_list, config,
+                    vis=True, to_kitti_file=True):
     threshold = config['cls_threshold']
-
+    nms_iou_threshold = config['nms_iou_threshold']
     with torch.no_grad():
-        input, label_map = loader.dataset[image_id]
-        input = input.to(device)
-        label_map = label_map.to(device)
-        label_map_unnorm, label_list = loader.dataset.get_label(image_id)
-
         # Forward Pass
         t_start = time.time()
         pred = net(input.unsqueeze(0)).squeeze_(0)
@@ -147,27 +137,63 @@ def eval_net(config_name, device):
             return
         print('find {} bounding boxes'.format(num_boxes))
 
-        ipdb.set_trace()
         corners = torch.zeros((num_boxes, 8))
         for i in range(1, 9):
             corners[:, i - 1] = torch.masked_select(pred[..., i], activation)
-        corners = corners.view(-1, 4, 2).numpy()
+        corners = corners.view(-1, 4, 2).cpu().numpy()
 
         scores = torch.masked_select(pred[..., 0], activation).cpu().numpy()
 
         # NMS
         t_start = time.time()
-        selected_ids = non_max_suppression(corners, scores, config['nms_iou_threshold'])
+        selected_ids = non_max_suppression(corners, scores, nms_iou_threshold)
         corners = corners[selected_ids]
         scores = scores[selected_ids]
         print("Non max suppression time:", time.time() - t_start)
 
-        print('visualization')
-        # Visualization
-        input_np = input.cpu().numpy()
-        plot_bev(input_np, label_list, window_name='GT')
-        plot_bev(input_np, corners, window_name='Prediction')
-        plot_label_map(cls_pred.cpu().numpy())
+        if vis:
+            input_np = input.cpu().numpy()
+            plot_bev(input_np, label_list, window_name='GT')
+            plot_bev(input_np, corners, window_name='Prediction')
+            plot_label_map(cls_pred.cpu().numpy())
+
+        if to_kitti_file:
+            line = to_kitti_result_line(corners)
+            print(line)
+
+
+def eval_net(config_name, device, net=None, all_sample=False):
+    config, _, _, _ = load_config(config_name)
+
+    # prepare model
+    if net is None:
+        net, criterion = build_model(config, device, train=False)
+        model_path = get_model_name(config['name'] + '__epoch10')
+        print('load {}'.format(model_path))
+        net.load_state_dict(torch.load(model_path, map_location=device))
+    else:
+        pass
+    # decode center7(cls,r1,r2,x,y,h,w) to corner9(cls,4x2)
+    net.set_decode(True)
+    loader, _ = get_data_loader(batch_size=1, use_npy=config['use_npy'], frame_range=config['frame_range'])
+    net.eval()
+
+    if all_sample is not True:
+        image_id = 5
+        input, label_map = loader.dataset[image_id]
+        input = input.to(device)
+        label_map = label_map.to(device)
+        # label_list [N,4,2]
+        label_map_unnorm, label_list = loader.dataset.get_label(image_id)
+        eval_one_sample(net, input, label_map, label_list, config, vis=True, to_kitti_file=False)
+    else:
+        for i, data in enumerate(loader):
+            input, label_map = data
+            input = input.to(device)
+            label_map = label_map.to(device)
+            # label_list [N,4,2]
+            label_map_unnorm, label_list = loader.dataset.get_label(image_id)
+            eval_one_sample(net, input, label_map, label_list, config, vis=False, to_kitti_file=True)
 
 def eval():
     device = torch.device('cpu')

@@ -179,9 +179,7 @@ def load_config(path):
          config: A Python dictionary of hyperparameter name-value pairs
          learning rate: The learning rate of the optimzer
          batch_size: Batch size used during training
-         num_epochs: Number of epochs to train the network for
-         target_classes: A list of strings denoting the classes to
-                        build the classifer for
+         max_epochs: Number of epochs to train the network for
      """
     with open(path) as file:
         config = json.load(file)

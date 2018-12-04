@@ -12,7 +12,8 @@
 
   "use_bn": true,
   "use_npy": false,
-  "frame_range": 20,
+  "frame_range": 8000,
+  "num_workers": 4,
 
   "cls_threshold": 0.2,
   "nms_iou_threshold": 0.1
