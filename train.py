@@ -101,15 +101,15 @@ def train_net(config_name, device):
         pbar.close()
         train_loss = train_loss * batch_size/ num_samples
 
-        val_loss = validate_batch(net, criterion, batch_size, val_data_loader, device)
-
-        print_log("Epoch {}|Time {:.3f}|Training Loss: {}|Validation Loss: {}".format(
-            epoch + 1, time.time() - start_time, train_loss, val_loss))
+        print_log("Epoch {} | Time {:.3f} | Training Loss: {}".format(
+            epoch + 1, time.time() - start_time, train_loss))
 
         if (epoch + 1) == max_epochs or (epoch + 1) % config['save_every'] == 0:
             model_path = get_model_name(config['name']+'__epoch{}'.format(epoch+1))
             torch.save(net.state_dict(), model_path)
             print_log("Checkpoint saved at {}".format(model_path))
+            val_loss = validate_batch(net, criterion, batch_size, val_data_loader, device)
+            print_log("Epoch {} | Validation Loss: {}".format(epoch + 1, val_loss))
     end_time = time.time()
     elapsed_time = end_time - start_time
     print_log("Total time elapsed: {:.2f} seconds".format(elapsed_time))
