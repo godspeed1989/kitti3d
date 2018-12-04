@@ -58,7 +58,7 @@ class KITTI(Dataset):
         self.use_npy = use_npy
 
         self.image_sets = self.load_imageset(train) # names
-        self.transform = transforms.Normalize(self.target_mean, self.target_std_dev)
+        # self.transform = transforms.Normalize(self.target_mean, self.target_std_dev)
 
     def __len__(self):
         return len(self.image_sets)
@@ -160,13 +160,14 @@ class KITTI(Dataset):
         label_corners = bev_corners / self.geometry['grid_size'] / self.geometry['ratio']
         # y to positive
         # XY in LiDAR <--> YX in label map
-        label_corners[:, 1] += self.geometry['label_shape'][0] / 2
+        label_corners[:, 1] += self.geometry['label_shape'][0] / 2.0
 
         points = get_points_in_a_rotated_box(label_corners)
 
         for p in points:
             metric_x, metric_y = trasform_label2metric(np.array(p),
-                ratio=self.geometry['ratio'], grid_size=self.geometry['grid_size'])
+                ratio=self.geometry['ratio'], grid_size=self.geometry['grid_size'],
+                base_height=self.geometry['label_shape'][0] // 2)
             actual_reg_target = np.copy(reg_target)
             actual_reg_target[2] = reg_target[2] - metric_x
             actual_reg_target[3] = reg_target[3] - metric_y

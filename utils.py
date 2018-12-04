@@ -18,7 +18,7 @@ def dict2str(dt):
         res += '%20s: %s\n' % (str(key), str(v))
     return res
 
-def trasform_label2metric(label, ratio=4, grid_size=0.1, base_height=100):
+def trasform_label2metric(label, ratio=4, grid_size=0.1, base_height=400):
     '''
     :param label: numpy array of shape [..., 2] of coordinates in label map space
     :return: numpy array of shape [..., 2] of the same coordinates in metric space
@@ -28,7 +28,7 @@ def trasform_label2metric(label, ratio=4, grid_size=0.1, base_height=100):
     metric = metric * grid_size * ratio
     return metric
 
-def transform_metric2label(metric, ratio=4, grid_size=0.1, base_height=100):
+def transform_metric2label(metric, ratio=4, grid_size=0.1, base_height=400):
     '''
     :param label: numpy array of shape [..., 2] of coordinates in metric space
     :return: numpy array of shape [..., 2] of the same coordinates in label_map space

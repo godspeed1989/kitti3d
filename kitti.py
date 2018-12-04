@@ -177,14 +177,14 @@ def corner_to_center_box3d(corner):
     z = np.sum(roi[:, 2], axis=0) / 8
 
     rz = np.sum(
-        math.atan2(roi[2, 0] - roi[1, 0], roi[2, 2] - roi[1, 2]) +
-        math.atan2(roi[6, 0] - roi[5, 0], roi[6, 2] - roi[5, 2]) +
-        math.atan2(roi[3, 0] - roi[0, 0], roi[3, 2] - roi[0, 2]) +
-        math.atan2(roi[7, 0] - roi[4, 0], roi[7, 2] - roi[4, 2]) +
-        math.atan2(roi[0, 2] - roi[1, 2], roi[1, 0] - roi[0, 0]) +
-        math.atan2(roi[4, 2] - roi[5, 2], roi[5, 0] - roi[4, 0]) +
-        math.atan2(roi[3, 2] - roi[2, 2], roi[2, 0] - roi[3, 0]) +
-        math.atan2(roi[7, 2] - roi[6, 2], roi[6, 0] - roi[7, 0])
+        math.atan2(roi[2, 0] - roi[1, 0], roi[2, 1] - roi[1, 1]) +
+        math.atan2(roi[6, 0] - roi[5, 0], roi[6, 1] - roi[5, 1]) +
+        math.atan2(roi[3, 0] - roi[0, 0], roi[3, 1] - roi[0, 1]) +
+        math.atan2(roi[7, 0] - roi[4, 0], roi[7, 1] - roi[4, 1]) +
+        math.atan2(roi[0, 1] - roi[1, 1], roi[1, 0] - roi[0, 0]) +
+        math.atan2(roi[4, 1] - roi[5, 1], roi[5, 0] - roi[4, 0]) +
+        math.atan2(roi[3, 1] - roi[2, 1], roi[2, 0] - roi[3, 0]) +
+        math.atan2(roi[7, 1] - roi[6, 1], roi[6, 0] - roi[7, 0])
     ) / 8
     rz = angle_in_limit(rz + np.pi / 2)
 
