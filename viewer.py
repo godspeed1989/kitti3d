@@ -82,8 +82,11 @@ def plot_obj(viewer, objs, calib, color):
         viewer.plot_bbox_mesh(box3d_pts_3d, color)
         center = corner_to_center_box3d(box3d_pts_3d)
         print(center)
+        min_xyz = center[:3] - center[3:6] / 2.0
+        max_xyz = center[:3] + center[3:6] / 2.0
+        viewer.add_line(min_xyz, max_xyz, (1,0,1,1))
 
-def view(id='000019'):
+def view(id='000018'):
     app = QtGui.QApplication([])
 
     f = os.path.join(KITTI_PATH, 'velodyne', id+'.bin')

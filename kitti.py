@@ -159,23 +159,22 @@ def angle_in_limit(angle):
 def corner_to_center_box3d(corner):
     roi = np.array(corner)
     h = abs(np.sum(roi[:4, 2] - roi[4:, 2]) / 4)
-    w = np.sum(
+    l = np.sum(
         np.sqrt(np.sum((roi[0, [0, 1]] - roi[3, [0, 1]])**2)) +
         np.sqrt(np.sum((roi[1, [0, 1]] - roi[2, [0, 1]])**2)) +
         np.sqrt(np.sum((roi[4, [0, 1]] - roi[7, [0, 1]])**2)) +
         np.sqrt(np.sum((roi[5, [0, 1]] - roi[6, [0, 1]])**2))
     ) / 4
-    l = np.sum(
+    w = np.sum(
         np.sqrt(np.sum((roi[0, [0, 1]] - roi[1, [0, 1]])**2)) +
         np.sqrt(np.sum((roi[2, [0, 1]] - roi[3, [0, 1]])**2)) +
         np.sqrt(np.sum((roi[4, [0, 1]] - roi[5, [0, 1]])**2)) +
         np.sqrt(np.sum((roi[6, [0, 1]] - roi[7, [0, 1]])**2))
     ) / 4
-    # x, y is at center
+    # x, y, z is at center
     x = np.sum(roi[:, 0], axis=0) / 8
     y = np.sum(roi[:, 1], axis=0) / 8
-    # z is at bottom
-    z = np.sum(roi[0:4, 2], axis=0) / 4
+    z = np.sum(roi[:, 2], axis=0) / 8
 
     rz = np.sum(
         math.atan2(roi[2, 0] - roi[1, 0], roi[2, 2] - roi[1, 2]) +
