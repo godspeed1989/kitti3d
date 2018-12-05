@@ -11,7 +11,7 @@ def conv3x3(in_planes, out_planes, stride=1, bias=False):
 
 
 def build_model(config, device, train=True):
-    net = PIXOR(config['use_bn']).to(device)
+    net = PIXOR(config['use_bn'], config['input_channels']).to(device)
     criterion = CustomLoss(device=device, num_classes=1)
     if not train:
         return net, criterion
@@ -58,13 +58,13 @@ class Bottleneck(nn.Module):
 
 class BackBone(nn.Module):
 
-    def __init__(self, block, num_block, use_bn=True):
+    def __init__(self, block, num_block, input_channels, use_bn=True):
         super(BackBone, self).__init__()
 
         self.use_bn = use_bn
 
         # Block 1
-        self.conv1 = conv3x3(36, 32)
+        self.conv1 = conv3x3(input_channels, 32)
         self.conv2 = conv3x3(32, 32)
         self.bn1 = nn.BatchNorm2d(32)
         self.bn2 = nn.BatchNorm2d(32)
@@ -256,9 +256,9 @@ class PIXOR(nn.Module):
     Note that we convert the dimensions to [C, H, W] for PyTorch's nn.Conv2d functions
     '''
 
-    def __init__(self, use_bn=True, decode=False):
+    def __init__(self, use_bn=True, input_channels=36, decode=False):
         super(PIXOR, self).__init__()
-        self.backbone = BackBone(Bottleneck, [3, 6, 6, 3], use_bn)
+        self.backbone = BackBone(Bottleneck, [3, 6, 6, 3], input_channels, use_bn)
         self.header = Header(use_bn)
         self.corner_decoder = Decoder()
         self.use_decode = decode

@@ -1,5 +1,5 @@
 {
-  "name": "ALLImage_10epoch_focal__epoch8",
+  "name": "ALLImage_fl",
   "resume_training": false,
   "old_ckpt_name": "ALLImage_10epoch",
 
@@ -11,6 +11,7 @@
   "save_every": 5,
 
   "use_bn": true,
+  "input_channels": 36,
   "use_npy": false,
   "frame_range": 8000,
   "num_workers": 4,

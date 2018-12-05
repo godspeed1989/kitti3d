@@ -12,6 +12,7 @@ from scipy.spatial import Delaunay
 
 from utils import plot_bev, get_points_in_a_rotated_box, plot_label_map, trasform_label2metric
 from kitti import read_label_obj, read_calib_file, compute_box_3d, corner_to_center_box3d
+from pointcloud2RGB import makeBVFeature
 
 KITTI_PATH = '/mine/KITTI_DAT'
 
@@ -34,31 +35,30 @@ def extract_pc_in_fov(pc, fov, X_MIN, X_MAX, Z_MIN, Z_MAX):
     return points, inds
 
 class KITTI(Dataset):
-
-    geometry = {
-        'L1': -40.0,
-        'L2': 40.0,
-        'W1': 0.0,
-        'W2': 70.0,
-        'H1': -2.5,
-        'H2': 1.0,
-        'input_shape': (800, 700, 36),  # 36 = 3.5/0.1 + 1
-        'label_shape': (200, 175, 7),   # 7 = 1 + [np.cos(yaw), np.sin(yaw), x, y, w, l]
-        'grid_size': 0.1,
-        'ratio': 4,
-        'fov': 50,  # field of view in degree
-    }
-
-    target_mean = np.array([0.008, 0.001, 0.202, 0.2, 0.43, 1.368])
-    target_std_dev = np.array([0.866, 0.5, 0.954, 0.668, 0.09, 0.111])
-
-    def __init__(self, frame_range = 10000, use_npy=False, train=True):
+    def __init__(self, input_channels=36, frame_range=10000, use_npy=False, train=True):
         self.frame_range = frame_range
         self.velo = []
         self.use_npy = use_npy
 
         self.image_sets = self.load_imageset(train) # names
-        # self.transform = transforms.Normalize(self.target_mean, self.target_std_dev)
+        # network input channels, 36 for PIXOR, 3 for RGB
+        # 36 = 3.5/0.1 + 1
+        self.input_channels = input_channels
+        self.geometry = {
+            'L1': -40.0,
+            'L2': 40.0,
+            'W1': 0.0,
+            'W2': 70.0,
+            'H1': -2.5,
+            'H2': 1.0,
+            'input_shape': (800, 700, self.input_channels),
+            'label_shape': (200, 175, 7),  # 7 = 1 + [np.cos(yaw), np.sin(yaw), x, y, w, l]
+            'grid_size': 0.1,
+            'ratio': 4,
+            'fov': 50,  # field of view in degree
+        }
+        self.target_mean = np.array([0.008, 0.001, 0.202, 0.2, 0.43, 1.368])
+        self.target_std_dev = np.array([0.866, 0.5, 0.954, 0.668, 0.09, 0.111])
 
     def __len__(self):
         return len(self.image_sets)
@@ -66,8 +66,12 @@ class KITTI(Dataset):
     def __getitem__(self, item):
         scan = self.load_velo_scan(item)
         if not self.use_npy:
-            scan = self.lidar_preprocess(scan)
+            if self.input_channels == 36:
+                scan = self.lidar_preprocess(scan)
+            elif self.input_channels == 3:
+                scan = self.lidar_preprocess_rgb(scan)
         scan = torch.from_numpy(scan)
+        #
         label_map, _ = self.get_label(item)
         self.reg_target_transform(label_map)
         label_map = torch.from_numpy(label_map)
@@ -149,8 +153,8 @@ class KITTI(Dataset):
         centers = corner_to_center_box3d(box3d_pts_3d)
         x = centers[0]
         y = centers[1]
-        w = centers[3]
-        l = centers[4]
+        l = centers[3]
+        w = centers[4]
         yaw = centers[6]
         reg_target = [np.cos(yaw), np.sin(yaw), x, y, w, l]
 
@@ -273,12 +277,36 @@ class KITTI(Dataset):
                         where=intensity_map_count!=0)
         return velo_processed
 
-def get_data_loader(batch_size, use_npy=False, frame_range=10000, workers=4):
-    train_dataset = KITTI(frame_range, use_npy=use_npy,train=True)
+    def lidar_preprocess_rgb(self, scan):
+        # select by FOV
+        if True:
+            pc, ind = extract_pc_in_fov(scan[:, :3], self.geometry['fov'],
+                                        self.geometry['W1'], self.geometry['W2'],
+                                        self.geometry['H1'], self.geometry['H2'])
+            inte = scan[ind, 3:]
+            velo = np.concatenate((pc, inte), axis=1)
+        else:
+            velo = scan
+
+        size_ROI={}
+        size_ROI['minX'] = self.geometry['W1']; size_ROI['maxX'] = self.geometry['W2']
+        size_ROI['minY'] = self.geometry['L1']; size_ROI['maxY'] = self.geometry['L2']
+        size_ROI['minZ'] = self.geometry['H1']; size_ROI['maxZ'] = self.geometry['H2']
+        size_ROI['Height'] = self.geometry['input_shape'][1]
+        size_ROI['Width'] = self.geometry['input_shape'][0]
+        size_cell = self.geometry['grid_size']
+
+        RGB_Map = makeBVFeature(velo, size_ROI, size_cell)
+
+        return RGB_Map
+
+
+def get_data_loader(batch_size=4, input_channels=36, use_npy=False, frame_range=10000, workers=4):
+    train_dataset = KITTI(frame_range=frame_range, input_channels=input_channels, use_npy=use_npy, train=True)
     train_dataset.load_velo()
     train_data_loader = DataLoader(train_dataset, shuffle=False, batch_size=batch_size, num_workers=workers)
 
-    val_dataset = KITTI(frame_range, use_npy=use_npy, train=False)
+    val_dataset = KITTI(frame_range=frame_range, input_channels=input_channels, use_npy=use_npy, train=False)
     val_dataset.load_velo()
     val_data_loader = DataLoader(val_dataset, batch_size=1, num_workers=workers)
 

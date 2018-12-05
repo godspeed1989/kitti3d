@@ -118,7 +118,7 @@ def compute_box_3d(obj, R0, V2C):
     return corners_3d
 
 
-def to_kitti_result_line():
+def to_kitti_result_line(corners):
     return ''
 
 
@@ -151,7 +151,7 @@ def angle_in_limit(angle):
         angle -= np.pi
     while angle < -np.pi / 2:
         angle += np.pi
-    if abs(angle + np.pi / 2) < limit_degree / 180 * np.pi:
+    if abs(angle - np.pi / 2) < limit_degree / 180 * np.pi:
         angle = np.pi / 2
     return angle
 
@@ -186,6 +186,6 @@ def corner_to_center_box3d(corner):
         math.atan2(roi[3, 1] - roi[2, 1], roi[2, 0] - roi[3, 0]) +
         math.atan2(roi[7, 1] - roi[6, 1], roi[6, 0] - roi[7, 0])
     ) / 8
-    rz = angle_in_limit(rz + np.pi / 2)
+    rz = angle_in_limit(rz)
 
     return np.array([x, y, z, l, w, h, rz])

@@ -63,7 +63,9 @@ def printgradnorm(self, grad_input, grad_output):
 
 def train_net(config_name, device):
     config, learning_rate, batch_size, max_epochs = load_config(config_name)
-    train_data_loader, val_data_loader = get_data_loader(batch_size=batch_size, use_npy=config['use_npy'], frame_range=config['frame_range'], workers=config['num_workers'])
+    train_data_loader, val_data_loader = get_data_loader(
+        batch_size=batch_size, input_channels=config['input_channels'],
+        use_npy=config['use_npy'], frame_range=config['frame_range'], workers=config['num_workers'])
     net, criterion, optimizer, scheduler = build_model(config, device, train=True)
 
     print_log(dict2str(config))
@@ -168,14 +170,15 @@ def eval_net(config_name, device, net=None, all_sample=False):
     # prepare model
     if net is None:
         net, criterion = build_model(config, device, train=False)
-        model_path = get_model_name(config['name'] + '__epoch10')
+        model_path = get_model_name(config['name'] + '__epoch25')
         print('load {}'.format(model_path))
         net.load_state_dict(torch.load(model_path, map_location=device))
     else:
         pass
     # decode center7(cls,r1,r2,x,y,h,w) to corner9(cls,4x2)
     net.set_decode(True)
-    loader, _ = get_data_loader(batch_size=1, use_npy=config['use_npy'], frame_range=config['frame_range'])
+    loader, _ = get_data_loader(batch_size=1, input_channels=config['input_channels'],
+                                use_npy=config['use_npy'], frame_range=config['frame_range'])
     net.eval()
 
     if all_sample is not True:
