@@ -52,8 +52,7 @@ def plot_bev(velo_array, label_list = None, map_height=800, window_name='GT'):
     :return: None
     '''
     intensity = np.zeros((velo_array.shape[0], velo_array.shape[1], 3), dtype=np.uint8)
-    # val = 1 - velo_array[::-1, :, -1]
-    val = 1 - velo_array[::-1, :, :-1].max(axis=2)
+    val = 1 - velo_array[:, :, :-1].max(axis=2)
     intensity[:, :, 0] = (val * 255).astype(np.uint8)
     intensity[:, :, 1] = (val * 255).astype(np.uint8)
     intensity[:, :, 2] = (val * 255).astype(np.uint8)
@@ -63,13 +62,13 @@ def plot_bev(velo_array, label_list = None, map_height=800, window_name='GT'):
         for corners in label_list:
             plot_corners = corners / 0.1
             plot_corners[:, 1] += int(map_height//2)
-            plot_corners[:, 1] = map_height - plot_corners[:, 1]
             plot_corners = plot_corners.astype(int).reshape((-1, 1, 2))
             cv2.polylines(intensity, [plot_corners], True, (255, 0, 0), 2)
             cv2.line(intensity, tuple(plot_corners[2, 0]), tuple(plot_corners[3, 0]), (0, 0, 255), 3)
     # ipdb.set_trace()
     intensity = intensity.astype(np.uint8)
     cv2.imshow(window_name, intensity)
+    cv2.imwrite(window_name+'.png', intensity)
 
 def plot_label_map(label_map):
     plt.figure()

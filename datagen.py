@@ -70,6 +70,10 @@ class KITTI(Dataset):
                 scan = self.lidar_preprocess(scan)
             elif self.input_channels == 3:
                 scan = self.lidar_preprocess_rgb(scan)
+            elif self.input_channels == 39:
+                scan1 = self.lidar_preprocess_rgb(scan)
+                scan2 = self.lidar_preprocess(scan)
+                scan = np.concatenate([scan1, scan2], axis=2)
         scan = torch.from_numpy(scan)
         #
         label_map, _ = self.get_label(item)
