@@ -267,7 +267,7 @@ class KITTI(Dataset):
         else:
             velo = scan
         # generate intensity map
-        velo_processed = np.zeros(self.geometry['input_shape'], dtype=np.float32)
+        velo_processed = np.zeros((*self.geometry['input_shape'][:2], 36), dtype=np.float32)
         intensity_map_count = np.zeros((velo_processed.shape[0], velo_processed.shape[1]))
         for i in range(velo.shape[0]):
             if self.point_in_roi(velo[i, :]):
