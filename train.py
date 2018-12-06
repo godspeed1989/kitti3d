@@ -187,7 +187,8 @@ def eval_net(config_name, device, net=None, all_sample=False):
         input = input.to(device)
         label_map = label_map.to(device)
         # label_list [N,4,2]
-        label_map_unnorm, label_list = loader.dataset.get_label(image_id)
+        objs, calib_dict = loader.dataset.get_label(image_id)
+        label_map_unnorm, label_list = loader.dataset.get_label_map(objs, calib_dict)
         eval_one_sample(net, input, label_map, label_list, config, vis=True, to_kitti_file=False)
     else:
         for i, data in enumerate(loader):
@@ -195,7 +196,8 @@ def eval_net(config_name, device, net=None, all_sample=False):
             input = input.to(device)
             label_map = label_map.to(device)
             # label_list [N,4,2]
-            label_map_unnorm, label_list = loader.dataset.get_label(image_id)
+            objs, calib_dict = loader.dataset.get_label(image_id)
+            label_map_unnorm, label_list = loader.dataset.get_label_map(objs, calib_dict)
             eval_one_sample(net, input, label_map, label_list, config, vis=False, to_kitti_file=True)
 
 def eval():

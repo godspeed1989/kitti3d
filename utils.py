@@ -72,7 +72,7 @@ def plot_bev(velo_array, label_list = None, map_height=800, window_name='GT'):
 
 def plot_label_map(label_map):
     plt.figure()
-    plt.imshow(label_map[::-1, :])
+    plt.imshow(label_map)
     plt.show()
 
 def get_points_in_a_rotated_box(corners):

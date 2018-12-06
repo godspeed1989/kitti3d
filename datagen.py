@@ -10,6 +10,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from scipy.spatial import Delaunay
 
+from params import para
 from utils import plot_bev, get_points_in_a_rotated_box, plot_label_map, trasform_label2metric
 from kitti import read_label_obj, read_calib_file, compute_box_3d, corner_to_center_box3d
 from pointcloud2RGB import makeBVFeature
@@ -45,20 +46,20 @@ class KITTI(Dataset):
         # 36 = 3.5/0.1 + 1
         self.input_channels = input_channels
         self.geometry = {
-            'L1': -40.0,
-            'L2': 40.0,
-            'W1': 0.0,
-            'W2': 70.0,
-            'H1': -2.5,
-            'H2': 1.0,
-            'input_shape': (800, 700, self.input_channels),
-            'label_shape': (200, 175, 7),  # 7 = 1 + [np.cos(yaw), np.sin(yaw), x, y, w, l]
-            'grid_size': 0.1,
-            'ratio': 4,
+            'L1': para.L1,
+            'L2': para.L2,
+            'W1': para.W1,
+            'W2': para.W2,
+            'H1': para.H1,
+            'H2': para.H2,
+            'input_shape': (*para.input_shape, self.input_channels),
+            'label_shape': (*para.label_shape, 7),  # 7 = 1 + [np.cos(yaw), np.sin(yaw), x, y, w, l]
+            'grid_size': para.grid_size,
+            'ratio': para.ratio,
             'fov': 50,  # field of view in degree
         }
-        self.target_mean = np.array([0.008, 0.001, 0.202, 0.2, 0.43, 1.368])
-        self.target_std_dev = np.array([0.866, 0.5, 0.954, 0.668, 0.09, 0.111])
+        self.target_mean = para.target_mean
+        self.target_std_dev = para.target_std_dev
 
     def __len__(self):
         return len(self.image_sets)
@@ -76,7 +77,8 @@ class KITTI(Dataset):
                 scan = np.concatenate([scan1, scan2], axis=2)
         scan = torch.from_numpy(scan)
         #
-        label_map, _ = self.get_label(item)
+        objs, calib_dict = self.get_label(item)
+        label_map, _ = self.get_label_map(objs, calib_dict)
         self.reg_target_transform(label_map)
         label_map = torch.from_numpy(label_map)
         return scan, label_map
@@ -187,7 +189,6 @@ class KITTI(Dataset):
             map[label_y, label_x, 0] = 1.0
             map[label_y, label_x, 1:7] = actual_reg_target
 
-
     def get_label(self, index):
         '''
         :param i: the ith velodyne scan in the train/val set
@@ -206,11 +207,13 @@ class KITTI(Dataset):
         label_path = os.path.join(KITTI_PATH, 'training', 'label_2', f_name)
         calib_path = os.path.join(KITTI_PATH, 'training', 'calib', f_name)
 
-        label_map = np.zeros(self.geometry['label_shape'], dtype=np.float32)
-        label_list = []
         objs = read_label_obj(label_path)
         calib_dict = read_calib_file(calib_path)
-        #
+        return objs, calib_dict
+
+    def get_label_map(self, objs, calib_dict):
+        label_map = np.zeros(self.geometry['label_shape'], dtype=np.float32)
+        label_list = []
         object_list = ['Car', 'Truck', 'Van']
         for obj in objs:
             if obj.type in object_list:
@@ -325,7 +328,8 @@ def test0():
     tstart = time.time()
     scan = k.load_velo_scan(id)
     processed_v = k.lidar_preprocess(scan)
-    label_map, label_list = k.get_label(id)
+    objs, calib_dict = k.get_label(id)
+    label_map, label_list = k.get_label_map(objs, calib_dict)
     print('time taken: %gs' %(time.time()-tstart))
     plot_bev(processed_v, label_list)
     plot_label_map(label_map[:, :, 6])
@@ -335,7 +339,8 @@ def find_reg_target_var_and_mean():
     k.load_velo()
     reg_targets = [[] for _ in range(6)]
     for i in range(len(k)):
-        label_map, _ = k.get_label(i)
+        objs, calib_dict = k.get_label(i)
+        label_map, _ = k.get_label_map(objs, calib_dict)
         car_locs = np.where(label_map[:, :, 0] == 1)
         for j in range(1, 7):
             map = label_map[:, :, j]

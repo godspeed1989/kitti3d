@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from params import para
 from loss import CustomLoss
 
 def conv3x3(in_planes, out_planes, stride=1, bias=False):
@@ -205,11 +206,11 @@ class Decoder(nn.Module):
 
     def __init__(self):
         super(Decoder, self).__init__()
-        self.geometry = [-40.0, 40.0, 0.0, 70.0]
-        self.grid_size = 0.4
+        self.geometry = [para.L1, para.L2, para.W1, para.W2]
+        self.grid_size = para.grid_size * para.ratio
 
-        self.target_mean = [0.008, 0.001, 0.202, 0.2, 0.43, 1.368]
-        self.target_std_dev = [0.866, 0.5, 0.954, 0.668, 0.09, 0.111]
+        self.target_mean = para.target_mean
+        self.target_std_dev = para.target_std_dev
 
     def forward(self, x):
         '''
