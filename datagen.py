@@ -12,7 +12,7 @@ from scipy.spatial import Delaunay
 
 from params import para
 from utils import plot_bev, get_points_in_a_rotated_box, plot_label_map, trasform_label2metric
-from kitti import read_label_obj, read_calib_file, compute_box_3d, corner_to_center_box3d
+from kitti import read_label_obj, read_calib_file, compute_box_3d, corner_to_center_box3d, point_transform
 from pointcloud2RGB import makeBVFeature
 
 KITTI_PATH = '/mine/KITTI_DAT'
@@ -36,10 +36,11 @@ def extract_pc_in_fov(pc, fov, X_MIN, X_MAX, Z_MIN, Z_MAX):
     return points, inds
 
 class KITTI(Dataset):
-    def __init__(self, input_channels=36, frame_range=10000, use_npy=False, train=True):
+    def __init__(self, input_channels=36, frame_range=10000, use_npy=False, train=True, aug_data=False):
         self.frame_range = frame_range
         self.velo = []
         self.use_npy = use_npy
+        self.aug_data = aug_data
 
         self.image_sets = self.load_imageset(train) # names
         # network input channels, 36 for PIXOR, 3 for RGB
@@ -65,7 +66,12 @@ class KITTI(Dataset):
         return len(self.image_sets)
 
     def __getitem__(self, item):
-        scan = self.load_velo_scan(item)
+        raw_scan = self.load_velo_scan(item)
+        raw_boxes_3d_corners = self.get_label(item)
+        if self.aug_data:
+            scan, boxes_3d_corners = self.augment_data(raw_scan, raw_boxes_3d_corners)
+        else:
+            scan, boxes_3d_corners = raw_scan, raw_boxes_3d_corners
         if not self.use_npy:
             if self.input_channels == 36:
                 scan = self.lidar_preprocess(scan)
@@ -77,8 +83,7 @@ class KITTI(Dataset):
                 scan = np.concatenate([scan1, scan2], axis=2)
         scan = torch.from_numpy(scan)
         #
-        objs, calib_dict = self.get_label(item)
-        label_map, _ = self.get_label_map(objs, calib_dict)
+        label_map, _ = self.get_label_map(boxes_3d_corners)
         self.reg_target_transform(label_map)
         label_map = torch.from_numpy(label_map)
         return scan, label_map
@@ -115,57 +120,6 @@ class KITTI(Dataset):
         print("There are {} images in txt file".format(len(names)))
         return names
 
-
-    def get_corners(self, bbox):
-
-        w, h, l, y, z, x, yaw = bbox[8:15]
-        y = -y
-        # manually take a negative s. t. it's a right-hand system, with
-        # x facing in the front windshield of the car
-        # z facing up
-        # y facing to the left of driver
-
-        yaw = -(yaw + np.pi / 2)
-        bev_corners = np.zeros((4, 2), dtype=np.float32)
-        # rear left
-        bev_corners[0, 0] = x - l/2 * np.cos(yaw) - w/2 * np.sin(yaw)
-        bev_corners[0, 1] = y - l/2 * np.sin(yaw) + w/2 * np.cos(yaw)
-
-        # rear right
-        bev_corners[1, 0] = x - l/2 * np.cos(yaw) + w/2 * np.sin(yaw)
-        bev_corners[1, 1] = y - l/2 * np.sin(yaw) - w/2 * np.cos(yaw)
-
-        # front right
-        bev_corners[2, 0] = x + l/2 * np.cos(yaw) + w/2 * np.sin(yaw)
-        bev_corners[2, 1] = y + l/2 * np.sin(yaw) - w/2 * np.cos(yaw)
-
-        # front left
-        bev_corners[3, 0] = x + l/2 * np.cos(yaw) - w/2 * np.sin(yaw)
-        bev_corners[3, 1] = y + l/2 * np.sin(yaw) + w/2 * np.cos(yaw)
-
-        # [6]
-        reg_target = [np.cos(yaw), np.sin(yaw), x, y, w, l]
-
-        return bev_corners, reg_target
-
-    # use calibration to get more accurate car
-    def get_corners_v1(self, obj, calib):
-        # (8, 3)
-        box3d_pts_3d = compute_box_3d(obj,
-            calib['R0_rect'].reshape([3,3]),
-            calib['Tr_velo_to_cam'].reshape([3,4]))
-        bev_corners = box3d_pts_3d[:4, :2]
-        #
-        centers = corner_to_center_box3d(box3d_pts_3d)
-        x = centers[0]
-        y = centers[1]
-        l = centers[3]
-        w = centers[4]
-        yaw = centers[6]
-        reg_target = [np.cos(yaw), np.sin(yaw), x, y, w, l]
-
-        return bev_corners, reg_target
-
     def update_label_map(self, map, bev_corners, reg_target):
         label_corners = bev_corners / self.geometry['grid_size'] / self.geometry['ratio']
         # y to positive
@@ -192,15 +146,6 @@ class KITTI(Dataset):
     def get_label(self, index):
         '''
         :param i: the ith velodyne scan in the train/val set
-        :return: label map: <--- This is the learning target
-                a tensor of shape 800 * 700 * 7 representing the expected output
-
-
-                label_list: <--- Intended for evaluation metrics & visualization
-                a list of length n; n =  number of cars + (truck+van+tram+dontcare) in the frame
-                each entry is another list, where the first element of this list indicates if the object
-                is a car or one of the 'dontcare' (truck,van,etc) object
-
         '''
         index = self.image_sets[index]
         f_name = index + '.txt'
@@ -209,25 +154,47 @@ class KITTI(Dataset):
 
         objs = read_label_obj(label_path)
         calib_dict = read_calib_file(calib_path)
-        return objs, calib_dict
 
-    def get_label_map(self, objs, calib_dict):
+        boxes3d_corners = []
+        for obj in objs:
+            if obj.type in para.object_list:
+                # use calibration to get accurate position (8, 3)
+                box3d_corners = compute_box_3d(obj,
+                    calib_dict['R0_rect'].reshape([3,3]),
+                    calib_dict['Tr_velo_to_cam'].reshape([3,4]))
+                boxes3d_corners.append(box3d_corners)
+        return boxes3d_corners
+
+    def get_reg_targets(self, box3d_pts_3d):
+        bev_corners = box3d_pts_3d[:4, :2]
+        #
+        centers = corner_to_center_box3d(box3d_pts_3d)
+        x = centers[0]
+        y = centers[1]
+        l = centers[3]
+        w = centers[4]
+        yaw = centers[6]
+        reg_target = [np.cos(yaw), np.sin(yaw), x, y, w, l]
+
+        return bev_corners, reg_target
+
+    def get_label_map(self, boxes3d_corners):
+        '''return
+        label map: <--- This is the learning target
+            a tensor of shape 800 * 700 * 7 representing the expected output
+        label_list: <--- Intended for evaluation metrics & visualization
+            a list of length n; n =  number of cars + (truck+van+tram+dontcare) in the frame
+            each entry is another list, where the first element of this list indicates if the object
+            is a car or one of the 'dontcare' (truck,van,etc) object
+        '''
         label_map = np.zeros(self.geometry['label_shape'], dtype=np.float32)
         label_list = []
-        object_list = ['Car', 'Truck', 'Van']
-        for obj in objs:
-            if obj.type in object_list:
-                corners, reg_target = self.get_corners_v1(obj, calib_dict)
-                self.update_label_map(label_map, corners, reg_target)
-                label_list.append(corners)
+        for box3d_corners in boxes3d_corners:
+            bev_corners, reg_target = self.get_reg_targets(box3d_corners)
+            self.update_label_map(label_map, bev_corners, reg_target)
+            label_list.append(bev_corners)
 
         return label_map, label_list
-
-    def get_rand_velo(self):
-        import random
-        rand_v = random.choice(self.velo)
-        print("A Velodyne Scan has shape ", rand_v.shape)
-        return random.choice(self.velo)
 
     def load_velo_scan(self, item):
         """Helper method to parse velodyne binary files into a list of scans."""
@@ -307,13 +274,42 @@ class KITTI(Dataset):
 
         return RGB_Map
 
+    def augment_data(self, scan, boxes_3d_corners):
+        if len(boxes_3d_corners) > 0:
+            all_corners = np.concatenate(boxes_3d_corners, axis=0)
+        else:
+            all_corners = None
+        if np.random.choice(2):
+            # global rotation
+            angle = np.random.uniform(-np.pi / 8, np.pi / 8)
+            scan[:, 0:3] = point_transform(scan[:, 0:3], 0, 0, 0, rz=angle)
+            if all_corners is not None:
+                all_corners = point_transform(all_corners, 0, 0, 0, rz=angle)
+        if np.random.choice(2):
+            # global translation
+            tx = np.random.uniform(-1, 1)
+            ty = np.random.uniform(-1, 1)
+            tz = np.random.uniform(-0.15, 0.15)
+            scan[:, 0:3] = point_transform(scan[:, 0:3], tx, ty, tz)
+            if all_corners is not None:
+                all_corners = point_transform(all_corners, tx, ty, tz)
+        if np.random.choice(2):
+            # global scaling
+            factor = np.random.uniform(0.9, 1.1)
+            scan[:, 0:3] = scan[:, 0:3] * factor
+            if all_corners is not None:
+                all_corners = all_corners * factor
+        ret_boxes_3d_corners = []
+        for i in range(len(boxes_3d_corners)):
+            ret_boxes_3d_corners.append(all_corners[i*8 : (i+1)*8])
+        return scan, ret_boxes_3d_corners
 
 def get_data_loader(batch_size=4, input_channels=36, use_npy=False, frame_range=10000, workers=4):
-    train_dataset = KITTI(frame_range=frame_range, input_channels=input_channels, use_npy=use_npy, train=True)
+    train_dataset = KITTI(frame_range=frame_range, input_channels=input_channels, use_npy=use_npy, train=True, aug_data=True)
     train_dataset.load_velo()
     train_data_loader = DataLoader(train_dataset, shuffle=False, batch_size=batch_size, num_workers=workers)
 
-    val_dataset = KITTI(frame_range=frame_range, input_channels=input_channels, use_npy=use_npy, train=False)
+    val_dataset = KITTI(frame_range=frame_range, input_channels=input_channels, use_npy=use_npy, train=False, aug_data=False)
     val_dataset.load_velo()
     val_data_loader = DataLoader(val_dataset, batch_size=1, num_workers=workers)
 
@@ -327,9 +323,10 @@ def test0():
     k.load_velo()
     tstart = time.time()
     scan = k.load_velo_scan(id)
+    boxes_3d_corners = k.get_label(id)
+    scan, boxes_3d_corners = k.augment_data(scan, boxes_3d_corners)
     processed_v = k.lidar_preprocess(scan)
-    objs, calib_dict = k.get_label(id)
-    label_map, label_list = k.get_label_map(objs, calib_dict)
+    label_map, label_list = k.get_label_map(boxes_3d_corners)
     print('time taken: %gs' %(time.time()-tstart))
     plot_bev(processed_v, label_list)
     plot_label_map(label_map[:, :, 6])
@@ -339,8 +336,8 @@ def find_reg_target_var_and_mean():
     k.load_velo()
     reg_targets = [[] for _ in range(6)]
     for i in range(len(k)):
-        objs, calib_dict = k.get_label(i)
-        label_map, _ = k.get_label_map(objs, calib_dict)
+        boxes_3d_corners = k.get_label(i)
+        label_map, _ = k.get_label_map(boxes_3d_corners)
         car_locs = np.where(label_map[:, :, 0] == 1)
         for j in range(1, 7):
             map = label_map[:, :, j]
@@ -367,7 +364,7 @@ def preprocess_to_npy(train=True):
     return
 
 def test():
-    train_data_loader, val_data_loader = get_data_loader(2)
+    train_data_loader, val_data_loader = get_data_loader(batch_size=2)
     for i, (input, label_map) in enumerate(train_data_loader):
         print("Entry", i)
         print("Input shape:", input.shape)

@@ -19,3 +19,5 @@ para.H1 = -2.5
 para.H2 = 1.0
 para.input_shape = (800, 700)
 para.label_shape = (200, 175)
+
+para.object_list = ['Car', 'Truck', 'Van']
