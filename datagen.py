@@ -271,9 +271,9 @@ class KITTI(Dataset):
         intensity_map_count = np.zeros((velo_processed.shape[0], velo_processed.shape[1]))
         for i in range(velo.shape[0]):
             if self.point_in_roi(velo[i, :]):
-                x = int((velo[i, 1]-self.geometry['L1']) / 0.1)
-                y = int((velo[i, 0]-self.geometry['W1']) / 0.1)
-                z = int((velo[i, 2]-self.geometry['H1']) / 0.1)
+                x = int((velo[i, 1]-self.geometry['L1']) / self.geometry['grid_size'])
+                y = int((velo[i, 0]-self.geometry['W1']) / self.geometry['grid_size'])
+                z = int((velo[i, 2]-self.geometry['H1']) / self.geometry['grid_size'])
                 velo_processed[x, y, z] = 1
                 velo_processed[x, y, -1] += velo[i, 3]
                 intensity_map_count[x, y] += 1

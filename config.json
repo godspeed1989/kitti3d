@@ -1,9 +1,11 @@
 {
+  "net": "PIXOR_RFB",
   "name": "ALLImage_fl",
   "resume_training": false,
   "old_ckpt_name": "ALLImage_10epoch",
 
   "batch_size": 4,
+  "optimizer": "ADAM",
   "learning_rate": 0.001,
   "momentum": 0.9,
   "lr_decay_every": 10,
@@ -11,7 +13,7 @@
   "save_every": 5,
 
   "use_bn": true,
-  "input_channels": 39,
+  "input_channels": 3,
   "use_npy": false,
   "frame_range": 8000,
   "num_workers": 4,

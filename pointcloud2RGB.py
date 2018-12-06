@@ -41,7 +41,7 @@ def makeBVFeature(PointCloud_origin, BoundaryCond, size_cell, dtype=np.float32):
     Height = BoundaryCond['Height']
     #
     heightMap = np.zeros((Width, Height), dtype=dtype)
-    height_z = np.int(BoundaryCond['maxZ']) - np.int(BoundaryCond['minZ'])
+    height_z = BoundaryCond['maxZ'] - BoundaryCond['minZ']
     heightMap[np.int_(PointCloud_frac[:, 1]), np.int_(PointCloud_frac[:, 0])] = \
         (PointCloud_frac[:, 2] - BoundaryCond['minZ']) / height_z
     heightMap = np.clip(heightMap, 0, 1.0)
@@ -76,7 +76,8 @@ if __name__ == '__main__':
     lidar = np.fromfile(f, dtype=np.float32).reshape(-1, 4)
 
     from datagen import extract_pc_in_fov
-    pc, ind = extract_pc_in_fov(lidar[:, :3], 50, 0, 70, -40, 40)
+    pc, ind = extract_pc_in_fov(pc=lidar[:, :3], fov=50,
+        X_MIN=0, X_MAX=70, Z_MIN=-2.5, Z_MAX=1)
     inte = lidar[ind, 3:]
     velo = np.concatenate((pc, inte), axis=1)
 

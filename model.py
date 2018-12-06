@@ -1,3 +1,4 @@
+import fire
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,12 +12,22 @@ def conv3x3(in_planes, out_planes, stride=1, bias=False):
 
 
 def build_model(config, device, train=True):
-    net = PIXOR(config['use_bn'], config['input_channels']).to(device)
+    if config['net'] == 'PIXOR':
+        net = PIXOR(use_bn=config['use_bn'], input_channels=config['input_channels']).to(device)
+    elif config['net'] == 'PIXOR_RFB':
+        net = PIXOR_RFB(use_bn=config['use_bn'], input_channels=config['input_channels']).to(device)
+    else:
+        raise NotImplementedError
     criterion = CustomLoss(device=device, num_classes=1)
     if not train:
         return net, criterion
 
-    optimizer = torch.optim.SGD(net.parameters(), lr=config['learning_rate'], momentum=config['momentum'])
+    if config['optimizer'] == 'ADAM':
+        optimizer = torch.optim.SGD(net.parameters(), lr=config['learning_rate'])
+    elif config['optimizer'] == 'SGD':
+        optimizer = torch.optim.SGD(net.parameters(), lr=config['learning_rate'], momentum=config['momentum'])
+    else:
+        raise NotImplementedError
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['lr_decay_every'], gamma=0.1)
 
     return net, criterion, optimizer, scheduler
@@ -283,20 +294,181 @@ class PIXOR(nn.Module):
 
         return torch.cat([cls, reg], dim=3)
 
+class PIXOR_RFB(nn.Module):
+    '''
+    The input of PIXOR nn module is a tensor of [batch_size, height, weight, channel]
+    The output of PIXOR nn module is also a tensor of [batch_size, height/4, weight/4, channel]
+    Note that we convert the dimensions to [C, H, W] for PyTorch's nn.Conv2d functions
+    '''
+    def __init__(self, use_bn=True, input_channels=36, decode=False):
+        super(PIXOR_RFB, self).__init__()
+        # expand channels
+        bias = not use_bn
+        self.use_bn = use_bn
+        self.conv1 = nn.Conv2d(input_channels, 32, kernel_size=1, bias=bias)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=1, bias=bias)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.conv3 = nn.Conv2d(64, 96, kernel_size=1, bias=bias)
+        self.bn3 = nn.BatchNorm2d(96)
+        #
+        self.rfb1 = BasicRFB(96, 96)
+        self.rfb2 = BasicRFB(96, 96)
+        #
+        self.maxpool = nn.MaxPool2d(2, stride=2, ceil_mode=True)
+        self.header = Header(use_bn)
+        self.use_decode = decode
+        self.corner_decoder = Decoder()
+
+    def set_decode(self, decode):
+        self.use_decode = decode
+
+    def forward(self, x):
+        x = x.permute(0, 3, 1, 2)
+        #
+        x = self.conv1(x)
+        if self.use_bn:
+            x = self.bn1(x)
+        x = self.conv2(x)
+        if self.use_bn:
+            x = self.bn2(x)
+        x = self.conv3(x)
+        if self.use_bn:
+            x = self.bn3(x)
+        #
+        x = self.maxpool(x)
+        x = self.rfb1(x)
+        x = self.maxpool(x)
+        x = self.rfb2(x)
+        #
+        cls, reg = self.header(x)
+
+        if self.use_decode:
+            reg = self.corner_decoder(reg)
+
+        # Return tensor(Batch_size, height, width, channels)
+        cls = cls.permute(0, 2, 3, 1)
+        reg = reg.permute(0, 2, 3, 1)
+
+        return torch.cat([cls, reg], dim=3)
+
+
+class BasicConv(nn.Module):
+    def __init__(self, in_planes, out_planes, kernel_size, stride=1, padding=0, dilation=1, groups=1, relu=True, bn=True, bias=False):
+        super(BasicConv, self).__init__()
+        self.out_channels = out_planes
+        self.conv = nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias)
+        self.bn = nn.BatchNorm2d(out_planes,eps=1e-5, momentum=0.01, affine=True) if bn else None
+        self.relu = nn.ReLU(inplace=True) if relu else None
+
+    def forward(self, x):
+        x = self.conv(x)
+        if self.bn is not None:
+            x = self.bn(x)
+        if self.relu is not None:
+            x = self.relu(x)
+        return x
+
+class BasicRFB(nn.Module):
+    def __init__(self, in_planes, out_planes, stride=1, scale = 0.1, visual = 1):
+        super(BasicRFB, self).__init__()
+        self.scale = scale
+        self.out_channels = out_planes
+        inter_planes = in_planes // 8
+        self.branch0 = nn.Sequential(
+                BasicConv(in_planes, 2*inter_planes, kernel_size=1, stride=stride),
+                BasicConv(2*inter_planes, 2*inter_planes, kernel_size=3, stride=1, padding=visual, dilation=visual, relu=False)
+                )
+        self.branch1 = nn.Sequential(
+                BasicConv(in_planes, inter_planes, kernel_size=1, stride=1),
+                BasicConv(inter_planes, 2*inter_planes, kernel_size=(3,3), stride=stride, padding=(1,1)),
+                BasicConv(2*inter_planes, 2*inter_planes, kernel_size=3, stride=1, padding=visual+1, dilation=visual+1, relu=False)
+                )
+        self.branch2 = nn.Sequential(
+                BasicConv(in_planes, inter_planes, kernel_size=1, stride=1),
+                BasicConv(inter_planes, (inter_planes//2)*3, kernel_size=3, stride=1, padding=1),
+                BasicConv((inter_planes//2)*3, 2*inter_planes, kernel_size=3, stride=stride, padding=1),
+                BasicConv(2*inter_planes, 2*inter_planes, kernel_size=3, stride=1, padding=2*visual+1, dilation=2*visual+1, relu=False)
+                )
+
+        self.ConvLinear = BasicConv(6*inter_planes, out_planes, kernel_size=1, stride=1, relu=False)
+        self.shortcut = BasicConv(in_planes, out_planes, kernel_size=1, stride=stride, relu=False)
+        self.relu = nn.ReLU(inplace=False)
+
+    def forward(self,x):
+        x0 = self.branch0(x)
+        x1 = self.branch1(x)
+        x2 = self.branch2(x)
+
+        out = torch.cat((x0,x1,x2),1)
+        out = self.ConvLinear(out)
+        short = self.shortcut(x)
+        out = out*self.scale + short
+        out = self.relu(out)
+
+        return out
+
 def test():
     print("Testing PIXOR model")
-    net = PIXOR(use_bn=False)
-    preds = net(torch.autograd.Variable(torch.randn(2, 800, 700, 36)))
-
-    print("Prediction output size", preds.size())
+    if torch.cuda.is_available():
+        dev = 'cuda'
+    else:
+        dev = 'cpu'
+    net = PIXOR(use_bn=False).to(dev)
+    preds = net(torch.autograd.Variable(torch.randn(2, 800, 700, 36).to(dev)))
+    print("Prediction output size", preds.size()) # [2, 200, 175, 7]
 
 def test_decoder():
     print("Testing PIXOR decoder")
-    net = PIXOR(use_bn=False)
+    if torch.cuda.is_available():
+        dev = 'cuda'
+    else:
+        dev = 'cpu'
+    net = PIXOR(use_bn=False).to(dev)
     net.set_decode(True)
-    preds = net(torch.autograd.Variable(torch.randn(2, 800, 700, 36)))
+    preds = net(torch.autograd.Variable(torch.randn(2, 800, 700, 36).to(dev)))
+    print("Predictions output size", preds.size()) # [2, 200, 175, 9]
 
-    print("Predictions output size", preds.size())
+def test_backbone():
+    print("Testing PIXOR backbone")
+    if torch.cuda.is_available():
+        dev = 'cuda'
+    else:
+        dev = 'cpu'
+    net = BackBone(Bottleneck, [3, 6, 6, 3], 36, use_bn=True).to(dev)
+    preds = net(torch.autograd.Variable(torch.randn(2, 36, 800, 700).to(dev)))
+    print("Predictions output size", preds.size()) # [2, 96, 200, 175]
+
+def test_header():
+    print("Testing PIXOR header")
+    if torch.cuda.is_available():
+        dev = 'cuda'
+    else:
+        dev = 'cpu'
+    net = Header(use_bn=True).to(dev)
+    cls, pred = net(torch.autograd.Variable(torch.randn(2, 96, 200, 175).to(dev)))
+    print("Predictions output size", cls.size(), pred.size()) # [2, 1, 200, 175], [2, 6, 200, 175]
+
+def test_basic_rfb():
+    print("Testing PIXOR header")
+    if torch.cuda.is_available():
+        dev = 'cuda'
+    else:
+        dev = 'cpu'
+    net = BasicRFB_a(96, 128).to(dev)
+    preds = net(torch.autograd.Variable(torch.randn(2, 96, 200, 175).to(dev)))
+    print("Predictions output size", preds.size()) # [2, 128, 200, 175]
+
+def test_pixor_rfb():
+    print("Testing PIXOR_RFB model")
+    if torch.cuda.is_available():
+        dev = 'cuda'
+    else:
+        dev = 'cpu'
+    net = PIXOR_RFB(use_bn=False, input_channels=36).to(dev)
+    net.set_decode(True)
+    preds = net(torch.autograd.Variable(torch.randn(2, 800, 700, 36).to(dev)))
+    print("Predictions output size", preds.size()) # [2, 200, 175, 9]
 
 if __name__ == "__main__":
-    test_decoder()
+    fire.Fire()
