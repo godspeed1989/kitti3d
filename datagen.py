@@ -54,7 +54,7 @@ class KITTI(Dataset):
             'H1': para.H1,
             'H2': para.H2,
             'input_shape': (*para.input_shape, self.input_channels),
-            'label_shape': (*para.label_shape, 7),  # 7 = 1 + [np.cos(yaw), np.sin(yaw), x, y, w, l]
+            'label_shape': (*para.label_shape, 1+para.box_code_len),
             'grid_size': para.grid_size,
             'ratio': para.ratio,
             'fov': 50,  # field of view in degree
@@ -133,15 +133,23 @@ class KITTI(Dataset):
                 ratio=self.geometry['ratio'], grid_size=self.geometry['grid_size'],
                 base_height=self.geometry['label_shape'][0] // 2)
             actual_reg_target = np.copy(reg_target)
-            actual_reg_target[2] = reg_target[2] - metric_x
-            actual_reg_target[3] = reg_target[3] - metric_y
-            actual_reg_target[4] = np.log(reg_target[4])
-            actual_reg_target[5] = np.log(reg_target[5])
+            if para.box_code_len == 6:
+                actual_reg_target[2] = reg_target[2] - metric_x
+                actual_reg_target[3] = reg_target[3] - metric_y
+                actual_reg_target[4] = np.log(reg_target[4])
+                actual_reg_target[5] = np.log(reg_target[5])
+            elif para.box_code_len == 5:
+                actual_reg_target[1] = reg_target[1] - metric_x
+                actual_reg_target[2] = reg_target[2] - metric_y
+                actual_reg_target[3] = np.log(reg_target[3])
+                actual_reg_target[4] = np.log(reg_target[4])
+            else:
+                raise NotImplementedError
 
             label_x = p[0]
             label_y = p[1]
             map[label_y, label_x, 0] = 1.0
-            map[label_y, label_x, 1:7] = actual_reg_target
+            map[label_y, label_x, 1:1+para.box_code_len] = actual_reg_target
 
     def get_label(self, index):
         '''
@@ -174,7 +182,12 @@ class KITTI(Dataset):
         l = centers[3]
         w = centers[4]
         yaw = centers[6]
-        reg_target = [np.cos(yaw), np.sin(yaw), x, y, w, l]
+        if para.box_code_len == 6:
+            reg_target = [np.cos(yaw), np.sin(yaw), x, y, w, l]
+        elif para.box_code_len == 5:
+            reg_target = [yaw, x, y, w, l]
+        else:
+            raise NotImplementedError
 
         return bev_corners, reg_target
 
@@ -329,17 +342,17 @@ def test0():
     label_map, label_list = k.get_label_map(boxes_3d_corners)
     print('time taken: %gs' %(time.time()-tstart))
     plot_bev(processed_v, label_list)
-    plot_label_map(label_map[:, :, 6])
+    plot_label_map(label_map[:, :, :3])
 
 def find_reg_target_var_and_mean():
     k = KITTI()
     k.load_velo()
-    reg_targets = [[] for _ in range(6)]
+    reg_targets = [[] for _ in range(para.box_code_len)]
     for i in range(len(k)):
         boxes_3d_corners = k.get_label(i)
         label_map, _ = k.get_label_map(boxes_3d_corners)
         car_locs = np.where(label_map[:, :, 0] == 1)
-        for j in range(1, 7):
+        for j in range(1, 1+para.box_code_len):
             map = label_map[:, :, j]
             reg_targets[j-1].extend(list(map[car_locs]))
 

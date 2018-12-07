@@ -180,7 +180,7 @@ class Header(nn.Module):
         self.bn4 = nn.BatchNorm2d(96)
 
         self.clshead = conv3x3(96, 1, bias=True)
-        self.reghead = conv3x3(96, 6, bias=True)
+        self.reghead = conv3x3(96, para.box_code_len, bias=True)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -232,11 +232,14 @@ class Decoder(nn.Module):
         if x.is_cuda:
             device = x.get_device()
 
-        for i in range(6):
+        for i in range(para.box_code_len):
             x[:, i, :, :] = x[:, i, :, :] * self.target_std_dev[i] + self.target_mean[i]
 
-        cos_t, sin_t, dx, dy, log_w, log_l = torch.chunk(x, 6, dim=1)
-        theta = torch.atan2(sin_t, cos_t)
+        if para.box_code_len == 6:
+            cos_t, sin_t, dx, dy, log_w, log_l = torch.chunk(x, 6, dim=1)
+            theta = torch.atan2(sin_t, cos_t)
+        elif para.box_code_len == 5:
+            theta, dx, dy, log_w, log_l = torch.chunk(x, 5, dim=1)
         cos_t = torch.cos(theta)
         sin_t = torch.sin(theta)
 
