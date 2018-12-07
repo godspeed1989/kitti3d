@@ -24,12 +24,12 @@ def build_model(config, device, train=True):
         return net, criterion
 
     if config['optimizer'] == 'ADAM':
-        optimizer = torch.optim.SGD(net.parameters(), lr=config['learning_rate'])
+        optimizer = torch.optim.Adam(net.parameters(), lr=config['learning_rate'])
     elif config['optimizer'] == 'SGD':
         optimizer = torch.optim.SGD(net.parameters(), lr=config['learning_rate'], momentum=config['momentum'])
     else:
         raise NotImplementedError
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['lr_decay_every'], gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['lr_decay_every'], gamma=0.5)
 
     return net, criterion, optimizer, scheduler
 

@@ -170,14 +170,14 @@ def eval_net(config_name, device, net=None, all_sample=False):
     # prepare model
     if net is None:
         net, criterion = build_model(config, device, train=False)
-        model_path = get_model_name(config['name'] + '__epoch25')
+        model_path = get_model_name(config['name'] + '__epoch50')
         print('load {}'.format(model_path))
         net.load_state_dict(torch.load(model_path, map_location=device))
     else:
         pass
     # decode center7(cls,r1,r2,x,y,h,w) to corner9(cls,4x2)
     net.set_decode(True)
-    loader, _ = get_data_loader(batch_size=1, input_channels=config['input_channels'],
+    _, loader = get_data_loader(batch_size=1, input_channels=config['input_channels'],
                                 use_npy=config['use_npy'], frame_range=config['frame_range'])
     net.eval()
 

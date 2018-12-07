@@ -1,6 +1,6 @@
 {
-  "net": "PIXOR_RFB",
-  "name": "ALLImage_fl",
+  "net": "PIXOR",
+  "name": "PIXOR_3",
   "resume_training": false,
   "old_ckpt_name": "ALLImage_10epoch",
 
