@@ -26,6 +26,8 @@ def makeBVFeature(PointCloud_origin, BoundaryCond, size_cell, dtype=np.float32):
     # 将点云坐标转化为栅格坐标
     PointCloud[:, 0] = np.floor(PointCloud[:, 0] / size_cell)
     PointCloud[:, 1] = np.floor(PointCloud[:, 1] / size_cell)
+    PointCloud[:, 0] = np.clip(PointCloud[:, 0], 0, BoundaryCond['Height'])
+    PointCloud[:, 1] = np.clip(PointCloud[:, 1], 0, BoundaryCond['Width'])
 
     # np.lexsort((b,a)) 先对a排序，再对b排序
     # 按x轴(栅格）进行从小到大排列，当x值相同时，按y轴（栅格）从小到大排序，y也相同时，按z从大到小排序
