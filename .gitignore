@@ -1,4 +1,6 @@
 # Byte-compiled / optimized / DLL files
+experiments_*/
+*.png
 backup/
 *.txt
 *.pt
