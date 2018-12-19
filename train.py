@@ -4,6 +4,7 @@ import ipdb
 import fire
 from tqdm import tqdm
 
+from params import para
 from datagen import get_data_loader
 from model import build_model
 from utils import get_model_name, load_config, plot_bev, plot_label_map, dict2str
@@ -61,7 +62,7 @@ def printgradnorm(self, grad_input, grad_output):
     print('grad_input norm:', grad_input[0].norm())
 
 
-def train_net(config_name, device):
+def train_net(config_name, device, val=False):
     config, learning_rate, batch_size, max_epochs = load_config(config_name)
     train_data_loader, val_data_loader = get_data_loader(
         batch_size=batch_size, input_channels=config['input_channels'],
@@ -70,7 +71,7 @@ def train_net(config_name, device):
 
     print_log(dict2str(config))
     if config['resume_training']:
-        saved_ckpt_path = get_model_name(config['old_ckpt_name'])
+        saved_ckpt_path = get_model_name(config['old_ckpt_name'], config['input_channels'], para.box_code_len)
         net.load_state_dict(torch.load(saved_ckpt_path, map_location=device))
         print_log("Successfully loaded trained ckpt at {}".format(saved_ckpt_path))
 
@@ -107,11 +108,12 @@ def train_net(config_name, device):
             epoch + 1, time.time() - start_time, train_loss))
 
         if (epoch + 1) == max_epochs or (epoch + 1) % config['save_every'] == 0:
-            model_path = get_model_name(config['name']+'__epoch{}'.format(epoch+1))
+            model_path = get_model_name(config['name']+'__epoch{}'.format(epoch+1), config['input_channels'], para.box_code_len)
             torch.save(net.state_dict(), model_path)
             print_log("Checkpoint saved at {}".format(model_path))
-            val_loss = validate_batch(net, criterion, batch_size, val_data_loader, device)
-            print_log("Epoch {} | Validation Loss: {}".format(epoch + 1, val_loss))
+            if val:
+                val_loss = validate_batch(net, criterion, batch_size, val_data_loader, device)
+                print_log("Epoch {} | Validation Loss: {}".format(epoch + 1, val_loss))
     end_time = time.time()
     elapsed_time = end_time - start_time
     print_log("Total time elapsed: {:.2f} seconds".format(elapsed_time))
@@ -170,7 +172,7 @@ def eval_net(config_name, device, net=None, all_sample=False):
     # prepare model
     if net is None:
         net, criterion = build_model(config, device, train=False)
-        model_path = get_model_name(config['name'] + '__epoch50')
+        model_path = get_model_name(config['name'] + '__epoch100', config['input_channels'], para.box_code_len)
         print('load {}'.format(model_path))
         net.load_state_dict(torch.load(model_path, map_location=device))
     else:
