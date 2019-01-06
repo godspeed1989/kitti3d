@@ -23,11 +23,19 @@ def makeBVFeature(PointCloud_origin, BoundaryCond, size_cell, dtype=np.float32):
     PointCloud[:, 0] = PointCloud[:, 0] - BoundaryCond['minX']
     PointCloud[:, 1] = PointCloud[:, 1] - BoundaryCond['minY']
 
+    mark_ground = False
+    if mark_ground:
+        PointCloud_grd = extract_ground(PointCloud)
+        PointCloud_grd[:, 0] = np.floor(PointCloud_grd[:, 0] / size_cell)
+        PointCloud_grd[:, 1] = np.floor(PointCloud_grd[:, 1] / size_cell)
+        PointCloud_grd[:, 0] = np.clip(PointCloud_grd[:, 0], 0, BoundaryCond['Height']-1)
+        PointCloud_grd[:, 1] = np.clip(PointCloud_grd[:, 1], 0, BoundaryCond['Width']-1)
+
     # 将点云坐标转化为栅格坐标
     PointCloud[:, 0] = np.floor(PointCloud[:, 0] / size_cell)
     PointCloud[:, 1] = np.floor(PointCloud[:, 1] / size_cell)
-    PointCloud[:, 0] = np.clip(PointCloud[:, 0], 0, BoundaryCond['Height'])
-    PointCloud[:, 1] = np.clip(PointCloud[:, 1], 0, BoundaryCond['Width'])
+    PointCloud[:, 0] = np.clip(PointCloud[:, 0], 0, BoundaryCond['Height']-1)
+    PointCloud[:, 1] = np.clip(PointCloud[:, 1], 0, BoundaryCond['Width']-1)
 
     # np.lexsort((b,a)) 先对a排序，再对b排序
     # 按x轴(栅格）进行从小到大排列，当x值相同时，按y轴（栅格）从小到大排序，y也相同时，按z从大到小排序
@@ -63,6 +71,12 @@ def makeBVFeature(PointCloud_origin, BoundaryCond, size_cell, dtype=np.float32):
 
     RGB_Map = np.stack([densityMap, heightMap, intensityMap], axis=2)
 
+    if mark_ground:
+        grdMap = np.ones((Width, Height), dtype=dtype)
+        grdMap[np.int_(PointCloud_grd[:, 1]), np.int_(PointCloud_grd[:, 0])] = 0
+        grdMap = np.expand_dims(grdMap, axis=-1)
+        RGB_Map *= grdMap
+
     return RGB_Map
 
 if __name__ == '__main__':
@@ -74,7 +88,7 @@ if __name__ == '__main__':
     size_ROI['Width'] = 800
     size_cell=0.1
 
-    f = os.path.join('/mine/KITTI_DAT/training', 'velodyne', '000011'+'.bin')
+    f = os.path.join('/mine/KITTI_DAT/training', 'velodyne', '000010'+'.bin')
     lidar = np.fromfile(f, dtype=np.float32).reshape(-1, 4)
 
     from datagen import extract_pc_in_fov

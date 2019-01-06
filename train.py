@@ -189,8 +189,8 @@ def eval_net(config_name, device, net=None, all_sample=False):
         input = input.to(device)
         label_map = label_map.to(device)
         # label_list [N,4,2]
-        boxes_3d_corners = loader.dataset.get_label(image_id)
-        label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners)
+        boxes_3d_corners, labelmap_boxes3d_corners = loader.dataset.get_label(image_id)
+        label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners)
         eval_one_sample(net, input, label_map, label_list, config, vis=True, to_kitti_file=False)
     else:
         for i, data in enumerate(loader):

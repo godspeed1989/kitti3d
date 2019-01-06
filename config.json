@@ -18,6 +18,6 @@
   "frame_range": 8000,
   "num_workers": 4,
 
-  "cls_threshold": 0.6,
+  "cls_threshold": 0.4,
   "nms_iou_threshold": 0.1
 }
