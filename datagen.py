@@ -363,17 +363,17 @@ def get_data_loader(batch_size=4, input_channels=36, use_npy=False, frame_range=
 
 def test0():
     k = KITTI()
-    id = 9
-    k.load_velo()
-    tstart = time.time()
-    scan = k.load_velo_scan(id)
-    boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs = k.get_label(id)
-    scan, boxes_3d_corners, labelmap_boxes_3d_corners = k.augment_data(scan, boxes_3d_corners, labelmap_boxes_3d_corners)
-    processed_v = k.lidar_preprocess(scan)
-    label_map, label_list = k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs)
-    print('time taken: %gs' %(time.time()-tstart))
-    plot_bev(processed_v, label_list)
-    plot_label_map(label_map[:, :, :3])
+    for id in range(len(k)):
+        k.load_velo()
+        tstart = time.time()
+        scan = k.load_velo_scan(id)
+        boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs = k.get_label(id)
+        scan, boxes_3d_corners, labelmap_boxes_3d_corners = k.augment_data(scan, boxes_3d_corners, labelmap_boxes_3d_corners)
+        processed_v = k.lidar_preprocess(scan)
+        label_map, label_list = k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs)
+        print('time taken: %gs' %(time.time()-tstart))
+        plot_bev(processed_v, label_list=label_list)
+        plot_label_map(label_map[:, :, :3])
 
 def find_reg_target_var_and_mean():
     k = KITTI(train=True)

@@ -159,8 +159,7 @@ def eval_one_sample(net, input, label_map, label_list, config,
 
         if vis:
             input_np = input.cpu().numpy()
-            plot_bev(input_np, label_list, window_name='GT')
-            plot_bev(input_np, corners, window_name='Prediction')
+            plot_bev(input_np, predict_list=corners, label_list=label_list, window_name='result')
             plot_label_map(cls_pred.cpu().numpy())
 
         if to_kitti_file:
@@ -202,7 +201,7 @@ def eval_net(config_name, device, net=None, all_sample=False):
             # label_list [N,4,2]
             boxes_3d_corners, labelmap_boxes3d_corners, cam_objs = loader.dataset.get_label(image_id)
             label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners, cam_objs)
-            eval_one_sample(net, input[0], label_map[0], label_list, config, vis=False, to_kitti_file=True)
+            eval_one_sample(net, input[0], label_map[0], label_list, config, vis=True, to_kitti_file=True)
 
 def eval(all_sample=False):
     device = torch.device('cpu')
