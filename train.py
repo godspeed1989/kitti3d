@@ -31,7 +31,7 @@ def validate_batch(net, criterion, batch_size, val_data_loader, device):
         label_map = label_map.to(device)
         predictions = net(input)
         loss, loc_loss, cls_loss = criterion(predictions, label_map)
-        val_loss += float(loss)
+        val_loss += loss.data
         num_samples += label_map.shape[0]
     return val_loss * batch_size / num_samples
 
@@ -94,7 +94,8 @@ def train_net(config_name, device, val=False):
             predictions = net(input)
             # ipdb.set_trace()
             loss, loc_loss, cls_loss = criterion(predictions, label_map)
-            print_log('loc_loss %.5f cls_loss %.5f' % (loc_loss, cls_loss), False, pbar)
+            print_log('%.5f loc %.5f cls %.5f' % (loss.data, loc_loss, cls_loss), False, pbar)
+
             loss.backward()
             optimizer.step()
 
@@ -126,6 +127,7 @@ def eval_one_sample(net, input, label_map, label_list, config,
     with torch.no_grad():
         # Forward Pass
         t_start = time.time()
+        print(input.shape)
         pred = net(input.unsqueeze(0)).squeeze_(0)
         print("Forward pass time", time.time() - t_start)
 
@@ -172,7 +174,7 @@ def eval_net(config_name, device, net=None, all_sample=False):
     # prepare model
     if net is None:
         net, criterion = build_model(config, device, train=False)
-        model_path = get_model_name(config['name'] + '__epoch100', config['input_channels'], para.box_code_len)
+        model_path = get_model_name(None, config['input_channels'], para.box_code_len)
         print('load {}'.format(model_path))
         net.load_state_dict(torch.load(model_path, map_location=device))
     else:
@@ -189,26 +191,26 @@ def eval_net(config_name, device, net=None, all_sample=False):
         input = input.to(device)
         label_map = label_map.to(device)
         # label_list [N,4,2]
-        boxes_3d_corners, labelmap_boxes3d_corners = loader.dataset.get_label(image_id)
-        label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners)
+        boxes_3d_corners, labelmap_boxes3d_corners, cam_objs = loader.dataset.get_label(image_id)
+        label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners, cam_objs)
         eval_one_sample(net, input, label_map, label_list, config, vis=True, to_kitti_file=False)
     else:
-        for i, data in enumerate(loader):
+        for image_id, data in enumerate(loader):
             input, label_map = data
             input = input.to(device)
             label_map = label_map.to(device)
             # label_list [N,4,2]
-            boxes_3d_corners = loader.dataset.get_label(image_id)
-            label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners)
-            eval_one_sample(net, input, label_map, label_list, config, vis=False, to_kitti_file=True)
+            boxes_3d_corners, labelmap_boxes3d_corners, cam_objs = loader.dataset.get_label(image_id)
+            label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners, cam_objs)
+            eval_one_sample(net, input[0], label_map[0], label_list, config, vis=False, to_kitti_file=True)
 
-def eval():
+def eval(all_sample=False):
     device = torch.device('cpu')
     if torch.cuda.is_available():
         device = torch.device('cuda')
     print('using device', device)
     name = 'config.json'
-    eval_net(name, device)
+    eval_net(name, device, all_sample=all_sample)
 
 def train():
     global logf

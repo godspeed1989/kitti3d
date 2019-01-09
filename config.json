@@ -5,6 +5,7 @@
   "old_ckpt_name": "ALLImage_10epoch",
 
   "batch_size": 4,
+  "loss_type": "CustomLoss",
   "optimizer": "ADAM",
   "learning_rate": 0.001,
   "momentum": 0.9,

@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from params import para
-from loss import CustomLoss
+from loss import CustomLoss, MultiTaskLoss
 
 def conv3x3(in_planes, out_planes, stride=1, bias=False):
     """3x3 convolution with padding"""
@@ -19,12 +19,19 @@ def build_model(config, device, train=True):
         net = PIXOR_RFB(use_bn=config['use_bn'], input_channels=config['input_channels']).to(device)
     else:
         raise NotImplementedError
-    criterion = CustomLoss(device=device, num_classes=1)
+    if config['loss_type'] == "MultiTaskLoss":
+        criterion = MultiTaskLoss(device=device, num_classes=1)
+    elif config['loss_type'] == "CustomLoss":
+        criterion = CustomLoss(device=device, num_classes=1)
+    else:
+        raise NotImplementedError
+
     if not train:
         return net, criterion
 
     if config['optimizer'] == 'ADAM':
-        optimizer = torch.optim.Adam(net.parameters(), lr=config['learning_rate'])
+        optimizer = torch.optim.Adam(params=[{'params': criterion.parameters()},
+                                             {'params': net.parameters()}])
     elif config['optimizer'] == 'SGD':
         optimizer = torch.optim.SGD(net.parameters(), lr=config['learning_rate'], momentum=config['momentum'])
     else:

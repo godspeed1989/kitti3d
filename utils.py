@@ -205,5 +205,10 @@ def get_model_name(name, feat_len, code_len):
     folder = "experiments_f{}_c{}".format(feat_len, code_len)
     if not os.path.exists(folder):
         os.makedirs(folder, exist_ok=True)
-    path = os.path.join(folder, name)
+    if name is not None:
+        path = os.path.join(folder, name)
+    else:
+        file_list = os.listdir(folder)
+        file_list.sort(key = lambda x: int(x[14:]))
+        path = os.path.join(folder, file_list[-1])
     return path
