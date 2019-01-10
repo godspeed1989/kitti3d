@@ -30,3 +30,5 @@ para.label_shape = (200, 175)
 para.object_list = ['Car']
 
 para.box_in_labelmap_ratio = 0.6
+
+para.use_se_mod = True

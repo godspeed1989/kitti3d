@@ -7,6 +7,7 @@ import math
 import json
 import os.path
 import ipdb
+from params import para
 
 def dict2str(dt):
     res = ''
@@ -37,7 +38,7 @@ def transform_metric2label(metric, ratio=4, grid_size=0.1, base_height=400):
     label[..., 1] += base_height
     return label
 
-def plot_bev(velo_array, predict_list=None, label_list=None, map_height=800, window_name='GT'):
+def plot_bev(velo_array, predict_list=None, label_list=None, window_name='GT'):
     '''
     Plot a Birds Eye View Lidar and Bounding boxes (Using OpenCV!)
     The heading of the vehicle is marked as a red line
@@ -47,7 +48,6 @@ def plot_bev(velo_array, predict_list=None, label_list=None, map_height=800, win
     :param label_list: a list of numpy arrays of shape [4, 2], which corresponds to the 4 corners' (x, y)
     The corners should be in the following sequence:
     rear left, rear right, front right and front left
-    :param map_height: height of the map
     :param window_name: name of the open_cv2 window
     :return: None
     '''
@@ -60,16 +60,15 @@ def plot_bev(velo_array, predict_list=None, label_list=None, map_height=800, win
 
     if label_list is not None:
         for corners in label_list:
-            plot_corners = corners / 0.1
-            plot_corners[:, 1] += int(map_height//2)
+            plot_corners = corners / para.grid_size
+            plot_corners[:, 1] += int(para.input_shape[0]//2)
             plot_corners = plot_corners.astype(int).reshape((-1, 1, 2))
             cv2.polylines(intensity, [plot_corners], True, (0, 0, 255), 2)
             cv2.line(intensity, tuple(plot_corners[2, 0]), tuple(plot_corners[3, 0]), (0, 255, 0), 2)
     if predict_list is not None:
         for corners in predict_list:
-            plot_corners = corners / 0.1
-            plot_corners[:, 1] += int(map_height//2)
-            #plot_corners[:, 1] = map_height - plot_corners[:, 1]
+            plot_corners = corners / para.grid_size
+            plot_corners[:, 1] += int(para.input_shape[0]//2)
             plot_corners = plot_corners.astype(int).reshape((-1, 1, 2))
             cv2.polylines(intensity, [plot_corners], True, (255, 255, 0), 2)
             cv2.line(intensity, tuple(plot_corners[2, 0]), tuple(plot_corners[3, 0]), (255, 0, 0), 2)
@@ -212,6 +211,8 @@ def get_model_name(name, feat_len, code_len):
     # path += "lr{}".format(config["learning_rate"])
 
     folder = "experiments_f{}_c{}".format(feat_len, code_len)
+    if para.use_se_mod:
+        folder += "_se"
     if not os.path.exists(folder):
         os.makedirs(folder, exist_ok=True)
     if name is not None:

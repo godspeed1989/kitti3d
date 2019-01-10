@@ -75,6 +75,24 @@ class Bottleneck(nn.Module):
         return out
 
 
+class SELayer(nn.Module):
+    def __init__(self, channel, reduction=16):
+        super(SELayer, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+                nn.Linear(channel, channel // reduction),
+                nn.ReLU(inplace=True),
+                nn.Linear(channel // reduction, channel),
+                nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y
+
+
 class BackBone(nn.Module):
 
     def __init__(self, block, num_block, input_channels, use_bn=True):
@@ -88,7 +106,8 @@ class BackBone(nn.Module):
         self.bn1 = nn.BatchNorm2d(32)
         self.bn2 = nn.BatchNorm2d(32)
         self.relu = nn.ReLU(inplace=True)
-
+        if para.use_se_mod:
+            self.se1 = SELayer(32)
 
         # Block 2
         self.in_planes = 32
@@ -108,6 +127,8 @@ class BackBone(nn.Module):
 
     def forward(self, x):
         x = self.conv1(x)
+        if para.use_se_mod:
+            x = self.se1(x)
         if self.use_bn:
             x = self.bn1(x)
         x = self.relu(x)
