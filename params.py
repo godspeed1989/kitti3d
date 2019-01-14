@@ -10,8 +10,8 @@ if para.box_code_len == 6:
     para.target_mean = np.array([0.022, -0.006,  0.194,  0.192,  0.487,  1.37], dtype=np.float32)
     para.target_std_dev = np.array([0.855, 0.519, 0.537, 0.389, 0.064, 0.109], dtype=np.float32)
 elif para.box_code_len == 5:
-    para.target_mean = np.array([0.075, 0.194, 0.191, 0.572, 1.523], dtype=np.float32)
-    para.target_std_dev = np.array([0.668, 0.64 , 0.386, 0.182, 0.338], dtype=np.float32)
+    para.target_mean = np.array([0.262, 0.194, 0.192, 0.487, 1.37 ], dtype=np.float32)
+    para.target_std_dev = np.array([1.979, 0.537, 0.389, 0.064, 0.109], dtype=np.float32)
 else:
     raise NotImplementedError
 
@@ -31,4 +31,9 @@ para.object_list = ['Car']
 
 para.box_in_labelmap_ratio = 0.6
 
-para.use_se_mod = True
+para.use_se_mod = False
+
+para.align_pc_with_img = True
+para.img_shape = (375, 1242)
+
+para.crop_pc_by_fov = False

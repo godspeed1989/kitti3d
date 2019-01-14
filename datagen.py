@@ -43,6 +43,8 @@ class KITTI(Dataset):
         self.velo = []
         self.use_npy = use_npy
         self.aug_data = aug_data
+        self.align_pc_with_img = para.align_pc_with_img
+        self.crop_pc_by_fov = para.crop_pc_by_fov
 
         self.image_sets = self.load_imageset(train) # names
         # network input channels, 36 for PIXOR, 3 for RGB
@@ -69,7 +71,9 @@ class KITTI(Dataset):
 
     def __getitem__(self, item):
         raw_scan = self.load_velo_scan(item)
-        raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, cam_objs = self.get_label(item)
+        raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, cam_objs, calib_dict = self.get_label(item)
+        if self.align_pc_with_img:
+            raw_scan = self.align_img_and_pc(raw_scan, calib_dict)
         if self.aug_data:
             scan, boxes_3d_corners, labelmap_boxes_3d_corners = \
                 self.augment_data(raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners)
@@ -92,6 +96,52 @@ class KITTI(Dataset):
         label_map = torch.from_numpy(label_map)
         return scan, label_map
 
+    def align_img_and_pc(self, raw_scan, calib_dict):
+        P = calib_dict['P2'].reshape([3,4])
+        Tr_velo_to_cam = calib_dict['Tr_velo_to_cam'].reshape([3,4])
+        Tr_velo_to_cam = np.concatenate([Tr_velo_to_cam, np.array([0,0,0,1]).reshape(1,4)], axis=0)
+        R_cam_to_rect = np.eye(4)
+        R_cam_to_rect[:3,:3] = calib_dict['R0_rect'].reshape(3,3)
+
+        def prepare_velo_points(pts3d_raw):
+            '''Replaces the reflectance value by 1, and tranposes the array, so
+                points can be directly multiplied by the camera projection matrix'''
+            pts3d = pts3d_raw
+            # Reflectance > 0
+            indices = pts3d[:, 3] >= 0
+            pts3d = pts3d[indices,:]
+            pts3d[:,3] = 1
+            return pts3d.transpose(), indices
+        pts3d, indices = prepare_velo_points(raw_scan)
+
+        reflectances = raw_scan[indices, 3]
+        def project_velo_points_in_img(pts3d, T_cam_velo, Rrect, Prect):
+            '''Project 3D points into 2D image. Expects pts3d as a 4xN numpy array.
+            Returns the 3D and 2D projection of the points are in front of the camera
+            '''
+            # 3D points in camera reference frame.
+            pts3d_cam = Rrect.dot(T_cam_velo.dot(pts3d))
+            # keep only points with z>0
+            # (points that are in front of the camera).
+            idx = (pts3d_cam[2, :]>=0)
+            pts2d_cam = Prect.dot(pts3d_cam[:, idx])
+            return pts3d[:, idx], pts2d_cam/pts2d_cam[2,:], idx
+        pts3d, pts2d_normed, idx = project_velo_points_in_img(pts3d, Tr_velo_to_cam, R_cam_to_rect, P)
+        reflectances = reflectances[idx]
+        assert reflectances.shape[0] == pts2d_normed.shape[1] == pts2d_normed.shape[1]
+
+        rows, cols = para.img_shape
+
+        points = []
+        for i in range(pts2d_normed.shape[1]):
+            c = int(np.round(pts2d_normed[0,i]))
+            r = int(np.round(pts2d_normed[1,i]))
+            if c < cols and r < rows and r > 0 and c > 0:
+                point = [ pts3d[0,i], pts3d[1,i], pts3d[2,i], reflectances[i] ]
+                points.append(point)
+
+        points = np.array(points)
+        return points
 
     def reg_target_transform(self, label_map):
         '''
@@ -186,7 +236,7 @@ class KITTI(Dataset):
                     calib_dict['Tr_velo_to_cam'].reshape([3,4]))
                 labelmap_boxes3d_corners.append(labelmap_box3d_corners)
                 cam_objs.append(obj)
-        return boxes3d_corners, labelmap_boxes3d_corners, cam_objs
+        return boxes3d_corners, labelmap_boxes3d_corners, cam_objs, calib_dict
 
     def get_reg_targets(self, box3d_pts_3d, labelmap_box3d_pts_3d, cam_obj):
         bev_corners = box3d_pts_3d[:4, :2]
@@ -264,7 +314,7 @@ class KITTI(Dataset):
 
     def lidar_preprocess(self, scan):
         # select by FOV
-        if True:
+        if self.crop_pc_by_fov:
             pc, ind = extract_pc_in_fov(scan[:, :3], self.geometry['fov'],
                                         self.geometry['W1'], self.geometry['W2'],
                                         self.geometry['H1'], self.geometry['H2'])
@@ -289,7 +339,7 @@ class KITTI(Dataset):
 
     def lidar_preprocess_rgb(self, scan):
         # select by FOV
-        if True:
+        if self.crop_pc_by_fov:
             pc, ind = extract_pc_in_fov(scan[:, :3], self.geometry['fov'],
                                         self.geometry['W1'], self.geometry['W2'],
                                         self.geometry['H1'], self.geometry['H2'])
@@ -367,12 +417,15 @@ def test0():
         k.load_velo()
         tstart = time.time()
         scan = k.load_velo_scan(id)
-        boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs = k.get_label(id)
+        boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs, calib_dict = k.get_label(id)
+        scan = k.align_img_and_pc(scan, calib_dict)
         scan, boxes_3d_corners, labelmap_boxes_3d_corners = k.augment_data(scan, boxes_3d_corners, labelmap_boxes_3d_corners)
         processed_v = k.lidar_preprocess(scan)
         label_map, label_list = k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs)
+        RGB_Map = k.lidar_preprocess_rgb(scan)
         print('time taken: %gs' %(time.time()-tstart))
         plot_bev(processed_v, label_list=label_list)
+        plot_label_map(RGB_Map)
         plot_label_map(label_map[:, :, :3])
 
 def find_reg_target_var_and_mean():
@@ -380,7 +433,7 @@ def find_reg_target_var_and_mean():
     k.load_velo()
     reg_targets = [[] for _ in range(para.box_code_len)]
     for i in range(len(k)):
-        boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs = k.get_label(i)
+        boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs, _ = k.get_label(i)
         label_map, _ = k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs)
         car_locs = np.where(label_map[:, :, 0] == 1)
         for j in range(1, 1+para.box_code_len):
