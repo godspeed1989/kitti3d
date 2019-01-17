@@ -13,7 +13,7 @@ from scipy.spatial import Delaunay
 
 from params import para
 from utils import plot_bev, get_points_in_a_rotated_box, plot_label_map, trasform_label2metric
-from kitti import (read_label_obj, read_calib_file, compute_box_3d,
+from kitti import (read_label_obj, read_calib_file, compute_lidar_box_3d,
                    corner_to_center_box3d, point_transform)
 from pointcloud2RGB import makeBVFeature
 
@@ -38,7 +38,8 @@ def extract_pc_in_fov(pc, fov, X_MIN, X_MAX, Z_MIN, Z_MAX):
     return points, inds
 
 class KITTI(Dataset):
-    def __init__(self, input_channels=36, frame_range=10000, use_npy=False, train=True, aug_data=False):
+    def __init__(self, input_channels=36, frame_range=10000, use_npy=False,
+                 selection='train', aug_data=False):
         self.frame_range = frame_range
         self.velo = []
         self.use_npy = use_npy
@@ -46,7 +47,9 @@ class KITTI(Dataset):
         self.align_pc_with_img = para.align_pc_with_img
         self.crop_pc_by_fov = para.crop_pc_by_fov
 
-        self.image_sets = self.load_imageset(train) # names
+        assert selection in ['train', 'val', 'trainval', 'test']
+        self.selection = selection
+        self.image_sets = self.load_imageset()
         # network input channels, 36 for PIXOR, 3 for RGB
         # 36 = 3.5/0.1 + 1
         self.input_channels = input_channels
@@ -71,9 +74,18 @@ class KITTI(Dataset):
 
     def __getitem__(self, item):
         raw_scan = self.load_velo_scan(item)
-        raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, cam_objs, calib_dict = self.get_label(item)
+
+        if self.selection == 'test':
+            index, calib_dict = self.get_label(item)
+        else:
+            index, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, cam_objs, calib_dict = self.get_label(item)
+
         if self.align_pc_with_img:
             raw_scan = self.align_img_and_pc(raw_scan, calib_dict)
+
+        if self.selection == 'test':
+            return torch.from_numpy(raw_scan)
+
         if self.aug_data:
             scan, boxes_3d_corners, labelmap_boxes_3d_corners = \
                 self.augment_data(raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners)
@@ -156,12 +168,18 @@ class KITTI(Dataset):
         reg_map[index] = (reg_map[index] - self.target_mean)/self.target_std_dev
 
 
-    def load_imageset(self, train):
+    def load_imageset(self):
         path = KITTI_PATH
-        if train:
+        if self.selection == 'train':
             path = os.path.join(path, "train.txt")
-        else:
+        elif self.selection == 'val':
             path = os.path.join(path, "val.txt")
+        elif self.selection == 'trainval':
+            path = os.path.join(path, "trainval.txt")
+        elif self.selection == 'test':
+            path = os.path.join(path, "test.txt")
+        else:
+            raise NotImplementedError
 
         with open(path, 'r') as f:
             lines = f.readlines() # get rid of \n symbol
@@ -211,19 +229,25 @@ class KITTI(Dataset):
         '''
         index = self.image_sets[index]
         f_name = index + '.txt'
-        label_path = os.path.join(KITTI_PATH, 'training', 'label_2', f_name)
-        calib_path = os.path.join(KITTI_PATH, 'training', 'calib', f_name)
+        if self.selection == 'test':
+            data_path = 'testing'
+        else:
+            data_path = 'training'
+        label_path = os.path.join(KITTI_PATH, data_path, 'label_2', f_name)
+        calib_path = os.path.join(KITTI_PATH, data_path, 'calib', f_name)
+
+        calib_dict = read_calib_file(calib_path)
+        if self.selection == 'test':
+            return index, calib_dict
 
         objs = read_label_obj(label_path)
-        calib_dict = read_calib_file(calib_path)
-
         cam_objs = []
         boxes3d_corners = []
         labelmap_boxes3d_corners = []
         for obj in objs:
             if obj.type in para.object_list:
                 # use calibration to get accurate position (8, 3)
-                box3d_corners = compute_box_3d(obj,
+                box3d_corners = compute_lidar_box_3d(obj,
                     calib_dict['R0_rect'].reshape([3,3]),
                     calib_dict['Tr_velo_to_cam'].reshape([3,4]))
                 boxes3d_corners.append(box3d_corners)
@@ -231,12 +255,12 @@ class KITTI(Dataset):
                 bev_obj.w *= para.box_in_labelmap_ratio
                 bev_obj.l *= para.box_in_labelmap_ratio
                 bev_obj.h *= para.box_in_labelmap_ratio
-                labelmap_box3d_corners = compute_box_3d(bev_obj,
+                labelmap_box3d_corners = compute_lidar_box_3d(bev_obj,
                     calib_dict['R0_rect'].reshape([3,3]),
                     calib_dict['Tr_velo_to_cam'].reshape([3,4]))
                 labelmap_boxes3d_corners.append(labelmap_box3d_corners)
                 cam_objs.append(obj)
-        return boxes3d_corners, labelmap_boxes3d_corners, cam_objs, calib_dict
+        return index, boxes3d_corners, labelmap_boxes3d_corners, cam_objs, calib_dict
 
     def get_reg_targets(self, box3d_pts_3d, labelmap_box3d_pts_3d, cam_obj):
         bev_corners = box3d_pts_3d[:4, :2]
@@ -399,11 +423,13 @@ class KITTI(Dataset):
         return scan, ret_boxes_3d_corners, ret_labelmap_boxes_3d_corners
 
 def get_data_loader(batch_size=4, input_channels=36, use_npy=False, frame_range=10000, workers=4):
-    train_dataset = KITTI(frame_range=frame_range, input_channels=input_channels, use_npy=use_npy, train=True, aug_data=True)
+    train_dataset = KITTI(frame_range=frame_range, input_channels=input_channels, use_npy=use_npy,
+                          selection='train', aug_data=True)
     train_dataset.load_velo()
     train_data_loader = DataLoader(train_dataset, shuffle=True, batch_size=batch_size, num_workers=workers)
 
-    val_dataset = KITTI(frame_range=frame_range, input_channels=input_channels, use_npy=use_npy, train=False, aug_data=False)
+    val_dataset = KITTI(frame_range=frame_range, input_channels=input_channels,
+                        use_npy=use_npy, selection='val', aug_data=False)
     val_dataset.load_velo()
     val_data_loader = DataLoader(val_dataset, batch_size=1, num_workers=workers)
 
@@ -412,12 +438,12 @@ def get_data_loader(batch_size=4, input_channels=36, use_npy=False, frame_range=
 #########################################################################################
 
 def test0():
-    k = KITTI()
+    k = KITTI(selection='train')
     for id in range(len(k)):
         k.load_velo()
         tstart = time.time()
         scan = k.load_velo_scan(id)
-        boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs, calib_dict = k.get_label(id)
+        _, boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs, calib_dict = k.get_label(id)
         scan = k.align_img_and_pc(scan, calib_dict)
         scan, boxes_3d_corners, labelmap_boxes_3d_corners = k.augment_data(scan, boxes_3d_corners, labelmap_boxes_3d_corners)
         processed_v = k.lidar_preprocess(scan)
@@ -429,11 +455,11 @@ def test0():
         plot_label_map(label_map[:, :, :3])
 
 def find_reg_target_var_and_mean():
-    k = KITTI(train=True)
+    k = KITTI(selection='trainval')
     k.load_velo()
     reg_targets = [[] for _ in range(para.box_code_len)]
     for i in range(len(k)):
-        boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs, _ = k.get_label(i)
+        _, boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs, _ = k.get_label(i)
         label_map, _ = k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs)
         car_locs = np.where(label_map[:, :, 0] == 1)
         for j in range(1, 1+para.box_code_len):
@@ -450,7 +476,7 @@ def find_reg_target_var_and_mean():
     return means, stds
 
 def preprocess_to_npy(train=True):
-    k = KITTI(train=train)
+    k = KITTI(selection='trainval')
     k.load_velo()
     for item, name in enumerate(k.velo):
         scan = k.load_velo_scan(item)

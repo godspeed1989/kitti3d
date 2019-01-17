@@ -9,7 +9,7 @@ from datagen import get_data_loader
 from model import build_model
 from utils import get_model_name, load_config, plot_bev, plot_label_map, dict2str
 from postprocess import non_max_suppression
-from kitti import to_kitti_result_line
+from kitti import corners2d_to_center3d, to_kitti_result_line
 
 logf = None
 def print_log(string, stdout=True, progress=None):
@@ -71,7 +71,7 @@ def train_net(config_name, device, val=False):
 
     print_log(dict2str(config))
     if config['resume_training']:
-        saved_ckpt_path = get_model_name(config['old_ckpt_name'], config['input_channels'], para.box_code_len)
+        saved_ckpt_path = get_model_name(config['old_ckpt_name'], config, para)
         net.load_state_dict(torch.load(saved_ckpt_path, map_location=device))
         print_log("Successfully loaded trained ckpt at {}".format(saved_ckpt_path))
 
@@ -109,7 +109,7 @@ def train_net(config_name, device, val=False):
             epoch + 1, time.time() - start_time, train_loss))
 
         if (epoch + 1) == max_epochs or (epoch + 1) % config['save_every'] == 0:
-            model_path = get_model_name(config['name']+'__epoch{}'.format(epoch+1), config['input_channels'], para.box_code_len)
+            model_path = get_model_name(config['name']+'__epoch{}'.format(epoch+1), config, para)
             torch.save(net.state_dict(), model_path)
             print_log("Checkpoint saved at {}".format(model_path))
             if val:
@@ -121,7 +121,7 @@ def train_net(config_name, device, val=False):
 
 
 def eval_one_sample(net, input, label_map, label_list, config,
-                    vis=True, to_kitti_file=True):
+                    vis=True, to_kitti_file=True, calib_dict=None, index=None):
     threshold = config['cls_threshold']
     nms_iou_threshold = config['nms_iou_threshold']
     with torch.no_grad():
@@ -163,7 +163,9 @@ def eval_one_sample(net, input, label_map, label_list, config,
             plot_label_map(cls_pred.cpu().numpy())
 
         if to_kitti_file:
-            line = to_kitti_result_line(corners)
+            center3d = corners2d_to_center3d(corners, -1.55, 0.5)
+            line = to_kitti_result_line(center3d, 'Car', 0.9, calib_dict)
+            print(index)
             print(line)
 
 
@@ -173,7 +175,7 @@ def eval_net(config_name, device, net=None, all_sample=False):
     # prepare model
     if net is None:
         net, criterion = build_model(config, device, train=False)
-        model_path = get_model_name(None, config['input_channels'], para.box_code_len)
+        model_path = get_model_name(None, config, para)
         print('load {}'.format(model_path))
         net.load_state_dict(torch.load(model_path, map_location=device))
     else:
@@ -190,7 +192,7 @@ def eval_net(config_name, device, net=None, all_sample=False):
         input = input.to(device)
         label_map = label_map.to(device)
         # label_list [N,4,2]
-        boxes_3d_corners, labelmap_boxes3d_corners, cam_objs, _ = loader.dataset.get_label(image_id)
+        _, boxes_3d_corners, labelmap_boxes3d_corners, cam_objs, _ = loader.dataset.get_label(image_id)
         label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners, cam_objs)
         eval_one_sample(net, input, label_map, label_list, config, vis=True, to_kitti_file=False)
     else:
@@ -199,9 +201,10 @@ def eval_net(config_name, device, net=None, all_sample=False):
             input = input.to(device)
             label_map = label_map.to(device)
             # label_list [N,4,2]
-            boxes_3d_corners, labelmap_boxes3d_corners, cam_objs, _ = loader.dataset.get_label(image_id)
+            index, boxes_3d_corners, labelmap_boxes3d_corners, cam_objs, calib_dict = loader.dataset.get_label(image_id)
             label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners, cam_objs)
-            eval_one_sample(net, input[0], label_map[0], label_list, config, vis=True, to_kitti_file=True)
+            eval_one_sample(net, input[0], label_map[0], label_list, config,
+                            vis=True, to_kitti_file=True, calib_dict=calib_dict, index=index)
 
 def eval(all_sample=False):
     device = torch.device('cpu')

@@ -197,7 +197,7 @@ def load_config(path):
 
     return config, learning_rate, batch_size, max_epochs
 
-def get_model_name(name, feat_len, code_len):
+def get_model_name(name, config, para):
     """ Generate a name for the model consisting of all the hyperparameter values
 
     Args:
@@ -210,6 +210,8 @@ def get_model_name(name, feat_len, code_len):
     # path += "bs{}_".format(config["batch_size"])
     # path += "lr{}".format(config["learning_rate"])
 
+    feat_len = config['input_channels']
+    code_len = para.box_code_len
     folder = "experiments_f{}_c{}".format(feat_len, code_len)
     if para.use_se_mod:
         folder += "_se"
@@ -219,6 +221,7 @@ def get_model_name(name, feat_len, code_len):
         path = os.path.join(folder, name)
     else:
         file_list = os.listdir(folder)
-        file_list.sort(key = lambda x: int(x[14:]))
+        prefix_len = len(config["name"]) + len("__epoch")
+        file_list.sort(key = lambda x: int(x[prefix_len:]))
         path = os.path.join(folder, file_list[-1])
     return path
