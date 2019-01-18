@@ -1,3 +1,4 @@
+import os
 import torch
 import time
 import ipdb
@@ -64,9 +65,13 @@ def printgradnorm(self, grad_input, grad_output):
 
 def train_net(config_name, device, val=False):
     config, learning_rate, batch_size, max_epochs = load_config(config_name)
-    train_data_loader, val_data_loader = get_data_loader(
-        batch_size=batch_size, input_channels=config['input_channels'],
+    train_data_loader = get_data_loader('train',
+        batch_size=batch_size, input_channels=config['input_channels'], shuffle=True, augment=True,
         use_npy=config['use_npy'], frame_range=config['frame_range'], workers=config['num_workers'])
+    val_data_loader = get_data_loader('val',
+        batch_size=1, input_channels=config['input_channels'], shuffle=False, augment=False,
+        use_npy=config['use_npy'], frame_range=config['frame_range'], workers=config['num_workers'])
+
     net, criterion, optimizer, scheduler = build_model(config, device, train=True)
 
     print_log(dict2str(config))
@@ -120,8 +125,8 @@ def train_net(config_name, device, val=False):
     print_log("Total time elapsed: {:.2f} seconds".format(elapsed_time))
 
 
-def eval_one_sample(net, input, label_map, label_list, config,
-                    vis=True, to_kitti_file=True, calib_dict=None, index=None):
+def eval_one_sample(net, input, config, label_list=None,
+                    vis=True, to_kitti_file=True, calib_dict=None):
     threshold = config['cls_threshold']
     nms_iou_threshold = config['nms_iou_threshold']
     with torch.no_grad():
@@ -140,7 +145,7 @@ def eval_one_sample(net, input, label_map, label_list, config,
         num_boxes = int(activation.sum())
         if num_boxes == 0:
             print("No bounding box found")
-            return
+            return []
         print('find {} bounding boxes'.format(num_boxes))
 
         corners = torch.zeros((num_boxes, 8))
@@ -165,54 +170,85 @@ def eval_one_sample(net, input, label_map, label_list, config,
         if to_kitti_file:
             center3d = corners2d_to_center3d(corners, -1.55, 0.5)
             line = to_kitti_result_line(center3d, 'Car', 0.9, calib_dict)
-            print(index)
             print(line)
+            return line
 
-
-def eval_net(config_name, device, net=None, all_sample=False):
-    config, _, _, _ = load_config(config_name)
-
+def get_eval_net(config_name, device, config):
     # prepare model
-    if net is None:
-        net, criterion = build_model(config, device, train=False)
-        model_path = get_model_name(None, config, para)
-        print('load {}'.format(model_path))
-        net.load_state_dict(torch.load(model_path, map_location=device))
-    else:
-        pass
+    net, criterion = build_model(config, device, train=False)
+    model_path = get_model_name(None, config, para)
+    print('load {}'.format(model_path))
+    net.load_state_dict(torch.load(model_path, map_location=device))
     # decode center7(cls,r1,r2,x,y,h,w) to corner9(cls,4x2)
     net.set_decode(True)
-    _, loader = get_data_loader(batch_size=1, input_channels=config['input_channels'],
-                                use_npy=config['use_npy'], frame_range=config['frame_range'])
     net.eval()
+    return net
 
-    if all_sample is not True:
-        image_id = 5
-        input, label_map = loader.dataset[image_id]
+def eval_net(config_name, device):
+    config, _, _, _ = load_config(config_name)
+    net = get_eval_net(config_name, device, config)
+    loader = get_data_loader('val', batch_size=1, input_channels=config['input_channels'],
+                              use_npy=config['use_npy'], frame_range=config['frame_range'],
+                              workers=config['num_workers'], shuffle=False, augment=False)
+
+    for image_id, data in enumerate(loader):
+        input, label_map = data
         input = input.to(device)
         label_map = label_map.to(device)
         # label_list [N,4,2]
-        _, boxes_3d_corners, labelmap_boxes3d_corners, cam_objs, _ = loader.dataset.get_label(image_id)
+        index, boxes_3d_corners, labelmap_boxes3d_corners, cam_objs, calib_dict = loader.dataset.get_label(image_id)
         label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners, cam_objs)
-        eval_one_sample(net, input, label_map, label_list, config, vis=True, to_kitti_file=False)
-    else:
-        for image_id, data in enumerate(loader):
+        eval_one_sample(net, input[0], config, label_list=label_list,
+                        vis=True, to_kitti_file=True, calib_dict=calib_dict)
+
+def dump_net(config_name, device, db_selection):
+    config, _, _, _ = load_config(config_name)
+    net = get_eval_net(config_name, device, config)
+
+    loader = get_data_loader(db_selection, batch_size=1, input_channels=config['input_channels'],
+                              use_npy=config['use_npy'], frame_range=config['frame_range'],
+                              workers=config['num_workers'], shuffle=False, augment=False)
+
+    if not os.path.exists(db_selection):
+        os.makedirs(db_selection, exist_ok=True)
+
+    for image_id, data in enumerate(loader):
+        if db_selection == 'test':
+            input = data
+            input = input.to(device)
+            index, calib_dict = loader.dataset.get_label(image_id)
+        else:
             input, label_map = data
             input = input.to(device)
             label_map = label_map.to(device)
-            # label_list [N,4,2]
-            index, boxes_3d_corners, labelmap_boxes3d_corners, cam_objs, calib_dict = loader.dataset.get_label(image_id)
-            label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners, cam_objs)
-            eval_one_sample(net, input[0], label_map[0], label_list, config,
-                            vis=True, to_kitti_file=True, calib_dict=calib_dict, index=index)
+            index, _, _, _, calib_dict = loader.dataset.get_label(image_id)
+        lines = eval_one_sample(net, input[0], config, label_list=None,
+                                vis=False, to_kitti_file=True, calib_dict=calib_dict)
+        txt_file = os.path.join(db_selection, index + '.txt')
+        with open(txt_file, 'w') as f:
+            for l in lines:
+                f.write(l)
+            f.close()
 
-def eval(all_sample=False):
+'''
+User functions
+'''
+
+def dump(db_selection='val'):
     device = torch.device('cpu')
     if torch.cuda.is_available():
         device = torch.device('cuda')
     print('using device', device)
     name = 'config.json'
-    eval_net(name, device, all_sample=all_sample)
+    dump_net(name, device, db_selection)
+
+def eval():
+    device = torch.device('cpu')
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    print('using device', device)
+    name = 'config.json'
+    eval_net(name, device)
 
 def train():
     global logf

@@ -49,6 +49,10 @@ class KITTI(Dataset):
 
         assert selection in ['train', 'val', 'trainval', 'test']
         self.selection = selection
+        if self.selection == 'test':
+            self.data_dir = 'testing'
+        else:
+            self.data_dir = 'training'
         self.image_sets = self.load_imageset()
         # network input channels, 36 for PIXOR, 3 for RGB
         # 36 = 3.5/0.1 + 1
@@ -223,18 +227,14 @@ class KITTI(Dataset):
             map[label_y, label_x, 0] = 1.0
             map[label_y, label_x, 1:1+para.box_code_len] = actual_reg_target
 
-    def get_label(self, index):
+    def get_label(self, idx):
         '''
         :param i: the ith velodyne scan in the train/val set
         '''
-        index = self.image_sets[index]
+        index = self.image_sets[idx]
         f_name = index + '.txt'
-        if self.selection == 'test':
-            data_path = 'testing'
-        else:
-            data_path = 'training'
-        label_path = os.path.join(KITTI_PATH, data_path, 'label_2', f_name)
-        calib_path = os.path.join(KITTI_PATH, data_path, 'calib', f_name)
+        label_path = os.path.join(KITTI_PATH, self.data_dir, 'label_2', f_name)
+        calib_path = os.path.join(KITTI_PATH, self.data_dir, 'calib', f_name)
 
         calib_dict = read_calib_file(calib_path)
         if self.selection == 'test':
@@ -321,7 +321,7 @@ class KITTI(Dataset):
         velo_files = []
         for file in self.image_sets:
             file = '{}.bin'.format(file)
-            velo_files.append(os.path.join(KITTI_PATH, 'training', 'velodyne', file))
+            velo_files.append(os.path.join(KITTI_PATH, self.data_dir, 'velodyne', file))
         print('Found ' + str(len(velo_files)) + ' Velodyne scans...')
         # Read the Velodyne scans. Each point is [x,y,z,reflectance]
         self.velo = velo_files
@@ -422,18 +422,15 @@ class KITTI(Dataset):
             ret_labelmap_boxes_3d_corners.append(labelmap_corners[i*8 : (i+1)*8])
         return scan, ret_boxes_3d_corners, ret_labelmap_boxes_3d_corners
 
-def get_data_loader(batch_size=4, input_channels=36, use_npy=False, frame_range=10000, workers=4):
-    train_dataset = KITTI(frame_range=frame_range, input_channels=input_channels, use_npy=use_npy,
-                          selection='train', aug_data=True)
-    train_dataset.load_velo()
-    train_data_loader = DataLoader(train_dataset, shuffle=True, batch_size=batch_size, num_workers=workers)
+def get_data_loader(db_selection, batch_size=4, input_channels=36,
+                    use_npy=False, frame_range=10000, workers=4,
+                    shuffle=False, augment=False):
+    dataset = KITTI(frame_range=frame_range, input_channels=input_channels, use_npy=use_npy,
+                    selection=db_selection, aug_data=augment)
+    dataset.load_velo()
+    data_loader = DataLoader(dataset, shuffle=shuffle, batch_size=batch_size, num_workers=workers)
 
-    val_dataset = KITTI(frame_range=frame_range, input_channels=input_channels,
-                        use_npy=use_npy, selection='val', aug_data=False)
-    val_dataset.load_velo()
-    val_data_loader = DataLoader(val_dataset, batch_size=1, num_workers=workers)
-
-    return train_data_loader, val_data_loader
+    return data_loader
 
 #########################################################################################
 
@@ -487,7 +484,7 @@ def preprocess_to_npy(train=True):
     return
 
 def test():
-    train_data_loader, val_data_loader = get_data_loader(batch_size=2)
+    train_data_loader = get_data_loader('train', batch_size=2)
     for i, (input, label_map) in enumerate(train_data_loader):
         print("Entry", i)
         print("Input shape:", input.shape)
