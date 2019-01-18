@@ -257,8 +257,10 @@ def lidar_to_camera_box(boxes, T_VELO_2_CAM, R_RECT_0):
     ret = []
     for box in boxes:
         x, y, z, h, w, l, rz = box
+        # warning: correct rz->ry should be : ry = -rz - np.pi / 2
+        # there is some thing wrong in our corner_to_center_box3d()
         (x, y, z), h, w, l, ry = lidar_to_camera(x, y, z, T_VELO_2_CAM, R_RECT_0), \
-                                    h, w, l, -rz - np.pi / 2
+                                    h, w, l, -rz
         ry = angle_in_limit(ry)
         ret.append([x, y, z, h, w, l, ry])
     return np.array(ret).reshape(-1, 7)

@@ -169,8 +169,7 @@ def eval_one_sample(net, input, config, label_list=None,
 
         if to_kitti_file:
             center3d = corners2d_to_center3d(corners, -1.55, 0.5)
-            line = to_kitti_result_line(center3d, 'Car', 0.9, calib_dict)
-            print(line)
+            line = to_kitti_result_line(center3d, 'Car', scores, calib_dict)
             return line
 
 def get_eval_net(config_name, device, config):
@@ -198,8 +197,11 @@ def eval_net(config_name, device):
         # label_list [N,4,2]
         index, boxes_3d_corners, labelmap_boxes3d_corners, cam_objs, calib_dict = loader.dataset.get_label(image_id)
         label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners, cam_objs)
-        eval_one_sample(net, input[0], config, label_list=label_list,
-                        vis=True, to_kitti_file=True, calib_dict=calib_dict)
+        lines = eval_one_sample(net, input[0], config, label_list=label_list,
+                                vis=True, to_kitti_file=True, calib_dict=calib_dict)
+        print('---{}---'.format(index))
+        for l in lines:
+            print(l)
 
 def dump_net(config_name, device, db_selection):
     config, _, _, _ = load_config(config_name)
