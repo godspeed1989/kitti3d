@@ -10,7 +10,7 @@ from datagen import get_data_loader
 from model import build_model
 from utils import get_model_name, load_config, plot_bev, plot_label_map, dict2str
 from postprocess import non_max_suppression
-from kitti import corners2d_to_center3d, to_kitti_result_line
+from kitti import corners2d_to_3d, to_kitti_result_line
 
 logf = None
 def print_log(string, stdout=True, progress=None):
@@ -168,8 +168,8 @@ def eval_one_sample(net, input, config, label_list=None,
             plot_label_map(cls_pred.cpu().numpy())
 
         if to_kitti_file:
-            center3d = corners2d_to_center3d(corners, -1.55, 0.5)
-            line = to_kitti_result_line(center3d, 'Car', scores, calib_dict)
+            center3d, corners3d = corners2d_to_3d(corners, -2, 0.5)
+            line = to_kitti_result_line(center3d, corners3d, 'Car', scores, calib_dict)
             return line
 
 def get_eval_net(config_name, device, config):
@@ -195,8 +195,8 @@ def eval_net(config_name, device):
         input = input.to(device)
         label_map = label_map.to(device)
         # label_list [N,4,2]
-        index, boxes_3d_corners, labelmap_boxes3d_corners, cam_objs, calib_dict = loader.dataset.get_label(image_id)
-        label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners, cam_objs)
+        index, boxes_3d_corners, labelmap_boxes3d_corners, calib_dict = loader.dataset.get_label(image_id)
+        label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners)
         lines = eval_one_sample(net, input[0], config, label_list=label_list,
                                 vis=True, to_kitti_file=True, calib_dict=calib_dict)
         print('---{}---'.format(index))

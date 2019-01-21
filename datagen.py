@@ -13,8 +13,9 @@ from scipy.spatial import Delaunay
 
 from params import para
 from utils import plot_bev, get_points_in_a_rotated_box, plot_label_map, trasform_label2metric
-from kitti import (read_label_obj, read_calib_file, compute_lidar_box_3d,
-                   corner_to_center_box3d, point_transform)
+from kitti import (read_label_obj, read_calib_file, compute_lidar_box_3d, lidar_center_to_corner_box3d,
+                   corner_to_center_box3d, point_transform, angle_in_limit)
+from gt_db_sampler import DataBaseSampler
 from pointcloud2RGB import makeBVFeature
 
 KITTI_PATH = '/mine/KITTI_DAT'
@@ -72,6 +73,8 @@ class KITTI(Dataset):
         }
         self.target_mean = para.target_mean
         self.target_std_dev = para.target_std_dev
+        if para.augment_data_use_db:
+            self.sampler = DataBaseSampler(KITTI_PATH, os.path.join(KITTI_PATH, "kitti_dbinfos_train.pkl"))
 
     def __len__(self):
         return len(self.image_sets)
@@ -82,10 +85,13 @@ class KITTI(Dataset):
         if self.selection == 'test':
             index, calib_dict = self.get_label(item)
         else:
-            index, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, cam_objs, calib_dict = self.get_label(item)
+            index, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, calib_dict = self.get_label(item)
 
         if self.align_pc_with_img:
             raw_scan = self.align_img_and_pc(raw_scan, calib_dict)
+
+        if self.crop_pc_by_fov:
+            raw_scan = self.crop_pc_using_fov(raw_scan)
 
         if self.selection == 'test':
             return torch.from_numpy(raw_scan)
@@ -107,10 +113,18 @@ class KITTI(Dataset):
                 scan = np.concatenate([scan1, scan2], axis=2)
         scan = torch.from_numpy(scan)
         #
-        label_map, _ = self.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs)
+        label_map, _ = self.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners)
         self.reg_target_transform(label_map)
         label_map = torch.from_numpy(label_map)
         return scan, label_map
+
+    def crop_pc_using_fov(self, raw_scan):
+        pc, ind = extract_pc_in_fov(raw_scan[:, :3], self.geometry['fov'],
+                                    self.geometry['W1'], self.geometry['W2'],
+                                    self.geometry['H1'], self.geometry['H2'])
+        inte = raw_scan[ind, 3:]
+        raw_scan = np.concatenate((pc, inte), axis=1)
+        return raw_scan
 
     def align_img_and_pc(self, raw_scan, calib_dict):
         P = calib_dict['P2'].reshape([3,4])
@@ -241,7 +255,6 @@ class KITTI(Dataset):
             return index, calib_dict
 
         objs = read_label_obj(label_path)
-        cam_objs = []
         boxes3d_corners = []
         labelmap_boxes3d_corners = []
         for obj in objs:
@@ -259,26 +272,18 @@ class KITTI(Dataset):
                     calib_dict['R0_rect'].reshape([3,3]),
                     calib_dict['Tr_velo_to_cam'].reshape([3,4]))
                 labelmap_boxes3d_corners.append(labelmap_box3d_corners)
-                cam_objs.append(obj)
-        return index, boxes3d_corners, labelmap_boxes3d_corners, cam_objs, calib_dict
+        return index, boxes3d_corners, labelmap_boxes3d_corners, calib_dict
 
-    def get_reg_targets(self, box3d_pts_3d, labelmap_box3d_pts_3d, cam_obj):
+    def get_reg_targets(self, box3d_pts_3d, labelmap_box3d_pts_3d):
         bev_corners = box3d_pts_3d[:4, :2]
         labelmap_bev_corners = labelmap_box3d_pts_3d[:4, :2]
         #
-        def ry_to_rz(ry):
-            angle = -ry - np.pi / 2
-            if angle >= np.pi:
-                angle -= np.pi
-            if angle < -np.pi:
-                angle = 2*np.pi + angle
-            return angle
         centers = corner_to_center_box3d(box3d_pts_3d)
         x = centers[0]
         y = centers[1]
         l = centers[3]
         w = centers[4]
-        yaw = ry_to_rz(cam_obj.ry)
+        yaw = angle_in_limit(-centers[6])
         if para.box_code_len == 6:
             reg_target = [np.cos(yaw), np.sin(yaw), x, y, w, l]
         elif para.box_code_len == 5:
@@ -288,7 +293,7 @@ class KITTI(Dataset):
 
         return bev_corners, labelmap_bev_corners, reg_target
 
-    def get_label_map(self, boxes3d_corners, labelmap_boxes3d_corners, cam_objs):
+    def get_label_map(self, boxes3d_corners, labelmap_boxes3d_corners):
         '''return
         label map: <--- This is the learning target
             a tensor of shape 800 * 700 * 7 representing the expected output
@@ -299,8 +304,8 @@ class KITTI(Dataset):
         '''
         label_map = np.zeros(self.geometry['label_shape'], dtype=np.float32)
         label_list = []
-        for box3d_corners, labelmap_box3d_corners, cam_obj in zip(boxes3d_corners, labelmap_boxes3d_corners, cam_objs):
-            bev_corners, labelmap_bev_corners, reg_target = self.get_reg_targets(box3d_corners, labelmap_box3d_corners, cam_obj)
+        for box3d_corners, labelmap_box3d_corners in zip(boxes3d_corners, labelmap_boxes3d_corners):
+            bev_corners, labelmap_bev_corners, reg_target = self.get_reg_targets(box3d_corners, labelmap_box3d_corners)
             self.update_label_map(label_map, labelmap_bev_corners, reg_target)
             label_list.append(bev_corners)
 
@@ -336,16 +341,7 @@ class KITTI(Dataset):
             return False
         return True
 
-    def lidar_preprocess(self, scan):
-        # select by FOV
-        if self.crop_pc_by_fov:
-            pc, ind = extract_pc_in_fov(scan[:, :3], self.geometry['fov'],
-                                        self.geometry['W1'], self.geometry['W2'],
-                                        self.geometry['H1'], self.geometry['H2'])
-            inte = scan[ind, 3:]
-            velo = np.concatenate((pc, inte), axis=1)
-        else:
-            velo = scan
+    def lidar_preprocess(self, velo):
         # generate intensity map
         velo_processed = np.zeros((*self.geometry['input_shape'][:2], 36), dtype=np.float32)
         intensity_map_count = np.zeros((velo_processed.shape[0], velo_processed.shape[1]))
@@ -361,17 +357,7 @@ class KITTI(Dataset):
                         where=intensity_map_count!=0)
         return velo_processed
 
-    def lidar_preprocess_rgb(self, scan):
-        # select by FOV
-        if self.crop_pc_by_fov:
-            pc, ind = extract_pc_in_fov(scan[:, :3], self.geometry['fov'],
-                                        self.geometry['W1'], self.geometry['W2'],
-                                        self.geometry['H1'], self.geometry['H2'])
-            inte = scan[ind, 3:]
-            velo = np.concatenate((pc, inte), axis=1)
-        else:
-            velo = scan
-
+    def lidar_preprocess_rgb(self, velo):
         size_ROI={}
         size_ROI['minX'] = self.geometry['W1']; size_ROI['maxX'] = self.geometry['W2']
         size_ROI['minY'] = self.geometry['L1']; size_ROI['maxY'] = self.geometry['L2']
@@ -387,16 +373,37 @@ class KITTI(Dataset):
     def augment_data(self, scan, boxes_3d_corners, labelmap_boxes_3d_corners):
         assert len(boxes_3d_corners) == len(labelmap_boxes_3d_corners)
         if len(boxes_3d_corners) > 0:
-            all_corners = np.concatenate(boxes_3d_corners, axis=0)
-            labelmap_corners = np.concatenate(labelmap_boxes_3d_corners, axis=0)
+            # [(8,3),...,(8,3)] -> (N,8,3)
+            all_corners = np.stack(boxes_3d_corners)
+            labelmap_corners = np.stack(labelmap_boxes_3d_corners)
         else:
-            all_corners = None
-            labelmap_corners = None
+            all_corners = np.zeros([0,8,3])
+            labelmap_corners = np.zeros([0,8,3])
+
+        if para.augment_data_use_db:
+            sampled = self.sampler.sample_all('Car', all_corners, 10)
+            if sampled is not None:
+                sampled_boxes_centers3d = sampled["boxes_centers3d"]
+                # gt
+                sampled_boxes_corners3d = lidar_center_to_corner_box3d(sampled_boxes_centers3d)
+                all_corners = np.concatenate([all_corners, sampled_boxes_corners3d], axis=0)
+                # labelmap
+                labelmap_sampled_boxes_centers3d = sampled_boxes_centers3d.copy()
+                labelmap_sampled_boxes_centers3d[:, 3:6] *= para.box_in_labelmap_ratio
+                labelmap_sampled_boxes_corners3d = lidar_center_to_corner_box3d(labelmap_sampled_boxes_centers3d)
+                labelmap_corners = np.concatenate([labelmap_corners, labelmap_sampled_boxes_corners3d], axis=0)
+                scan = np.vstack([scan, sampled["points"]])
+
+        num_target = all_corners.shape[0]
+        # (N,8,3) -> (N*8,3)
+        all_corners = np.reshape(all_corners, [num_target*8, 3])
+        labelmap_corners = np.reshape(labelmap_corners, [num_target*8, 3])
+
         if np.random.choice(2):
             # global rotation
             angle = np.random.uniform(-np.pi / 8, np.pi / 8)
             scan[:, 0:3] = point_transform(scan[:, 0:3], 0, 0, 0, rz=angle)
-            if all_corners is not None:
+            if num_target > 0:
                 all_corners = point_transform(all_corners, 0, 0, 0, rz=angle)
                 labelmap_corners = point_transform(labelmap_corners, 0, 0, 0, rz=angle)
         if np.random.choice(2):
@@ -405,19 +412,20 @@ class KITTI(Dataset):
             ty = np.random.uniform(-1, 1)
             tz = np.random.uniform(-0.15, 0.15)
             scan[:, 0:3] = point_transform(scan[:, 0:3], tx, ty, tz)
-            if all_corners is not None:
+            if num_target > 0:
                 all_corners = point_transform(all_corners, tx, ty, tz)
                 labelmap_corners = point_transform(labelmap_corners, tx, ty, tz)
         if np.random.choice(2):
             # global scaling
             factor = np.random.uniform(0.9, 1.1)
             scan[:, 0:3] = scan[:, 0:3] * factor
-            if all_corners is not None:
+            if num_target > 0:
                 all_corners = all_corners * factor
                 labelmap_corners = labelmap_corners * factor
+
         ret_boxes_3d_corners = []
         ret_labelmap_boxes_3d_corners = []
-        for i in range(len(boxes_3d_corners)):
+        for i in range(num_target):
             ret_boxes_3d_corners.append(all_corners[i*8 : (i+1)*8])
             ret_labelmap_boxes_3d_corners.append(labelmap_corners[i*8 : (i+1)*8])
         return scan, ret_boxes_3d_corners, ret_labelmap_boxes_3d_corners
@@ -440,11 +448,14 @@ def test0():
         k.load_velo()
         tstart = time.time()
         scan = k.load_velo_scan(id)
-        _, boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs, calib_dict = k.get_label(id)
-        scan = k.align_img_and_pc(scan, calib_dict)
+        _, boxes_3d_corners, labelmap_boxes_3d_corners, calib_dict = k.get_label(id)
+        if k.align_pc_with_img:
+            scan = k.align_img_and_pc(scan, calib_dict)
+        if k.crop_pc_by_fov:
+            scan = k.crop_pc_using_fov(scan)
         scan, boxes_3d_corners, labelmap_boxes_3d_corners = k.augment_data(scan, boxes_3d_corners, labelmap_boxes_3d_corners)
         processed_v = k.lidar_preprocess(scan)
-        label_map, label_list = k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs)
+        label_map, label_list = k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners)
         RGB_Map = k.lidar_preprocess_rgb(scan)
         print('time taken: %gs' %(time.time()-tstart))
         plot_bev(processed_v, label_list=label_list)
@@ -456,8 +467,8 @@ def find_reg_target_var_and_mean():
     k.load_velo()
     reg_targets = [[] for _ in range(para.box_code_len)]
     for i in range(len(k)):
-        _, boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs, _ = k.get_label(i)
-        label_map, _ = k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners, cam_objs)
+        _, boxes_3d_corners, labelmap_boxes_3d_corners, _ = k.get_label(i)
+        label_map, _ = k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners)
         car_locs = np.where(label_map[:, :, 0] == 1)
         for j in range(1, 1+para.box_code_len):
             map = label_map[:, :, j]

@@ -252,17 +252,17 @@ def angle_in_limit(angle):
         angle = np.pi / 2
     return angle
 
-def lidar_to_camera_box(boxes, T_VELO_2_CAM, R_RECT_0):
-    # (N, 7) -> (N, 7) x,y,z,h,w,l,r
+def lidar_to_camera_box3d(boxes, T_VELO_2_CAM, R_RECT_0):
+    # (N, 7) -> (N, 7) x,y,z, w,l,h,r
     ret = []
     for box in boxes:
-        x, y, z, h, w, l, rz = box
+        x, y, z, w, l, h, rz = box
         # warning: correct rz->ry should be : ry = -rz - np.pi / 2
         # there is some thing wrong in our corner_to_center_box3d()
-        (x, y, z), h, w, l, ry = lidar_to_camera(x, y, z, T_VELO_2_CAM, R_RECT_0), \
-                                    h, w, l, -rz
+        (x, y, z), w, l, h, ry = lidar_to_camera(x, y, z, T_VELO_2_CAM, R_RECT_0), \
+                                    w, l, h, rz
         ry = angle_in_limit(ry)
-        ret.append([x, y, z, h, w, l, ry])
+        ret.append([x, y, z, w, l, h, ry])
     return np.array(ret).reshape(-1, 7)
 
 # (N, 7) -> (N, 8, 3)
@@ -277,7 +277,7 @@ def lidar_center_to_corner_box3d(boxes_center):
         size = box[3:6]
         rotation = [0, 0, box[-1]]
 
-        h, w, l = size[0], size[1], size[2]
+        w, l, h = size[0], size[1], size[2]
         trackletBox = np.array([  # in velodyne coordinates around zero point and without orientation yet
             [-l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2], \
             [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2], \
@@ -296,19 +296,16 @@ def lidar_center_to_corner_box3d(boxes_center):
 
     return ret
 
-def lidar_box3d_to_camera_box(boxes3d, cal_projection=False, P2=None, T_VELO_2_CAM=None, R_RECT_0=None):
-    # (N, 7) -> (N, 4)        x,y,z,h,w,l,rz -> x1,y1,x2,y2
+def lidar_box3d_to_camera_box(corners3d, cal_projection=False, P2=None, T_VELO_2_CAM=None, R_RECT_0=None):
+    # (N, 8, 3) -> (N, 4)        x1,y1,x2,y2
     # or
-    # (N, 7) -> (N, 8, 2)     x,y,z,h,w,l,rz -> 8*(x, y)
-    num = len(boxes3d)
+    # (N, 8, 3) -> (N, 8, 2)     8*(x, y)
+    num = corners3d.shape[0]
     boxes2d = np.zeros((num, 4), dtype=np.int32)
     projections = np.zeros((num, 8, 2), dtype=np.float32)
 
-    # TODO: use compute_lidar_box_3d or direct input corners3d
-    lidar_boxes3d_corner = lidar_center_to_corner_box3d(boxes3d)
-
     for n in range(num):
-        box3d = lidar_boxes3d_corner[n]
+        box3d = corners3d[n]
         box3d = lidar_to_camera_point(box3d, T_VELO_2_CAM, R_RECT_0)
         points = np.hstack((box3d, np.ones((8, 1)))).T  # (8, 4) -> (4, 8)
         points = np.matmul(P2, points).T
@@ -335,7 +332,7 @@ def corners_2d_to_3d(corners2d, bottom_z, top_z):
     corners3d[:,4:,2] = top_z
     return corners3d
 
-def corners2d_to_center3d(corners2d, bottom_z, top_z):
+def corners2d_to_3d(corners2d, bottom_z, top_z):
     # (N, 4, 2) -> (N, 7)
     # (N, 4, 2) -> (N, 8, 3)
     corners3d = corners_2d_to_3d(corners2d, bottom_z, top_z)
@@ -349,11 +346,11 @@ def corners2d_to_center3d(corners2d, bottom_z, top_z):
         z = center[2] - center[5]/2.0
         l, w, h, rz = center[3:]
         center3d.append([x,y,z, h,w,l, rz])
-    return np.array(center3d)
+    return np.array(center3d), corners3d
 
-def to_kitti_result_line(centers3d, clses, scores, calib_dict):
+def to_kitti_result_line(centers3d, corners3d, clses, scores, calib_dict):
     # Input:
-    #   centers3d:  (N', 7) x y z h w l r
+    #   centers3d:  (N', 7) x y z l w h r
     #   scores:     float or (N')
     #   clses:      string or (N')      'Car' or 'Pedestrain' or 'Cyclist'
     # Output:
@@ -365,27 +362,28 @@ def to_kitti_result_line(centers3d, clses, scores, calib_dict):
     if isinstance(clses, str): clses = [clses]*N
     P2, T_VELO_2_CAM, R_RECT_0 = reorg_calib_dict(calib_dict)
     #
-    for box, score, c in zip(centers3d, scores, clses):
-        box3d = lidar_to_camera_box(
-            box[np.newaxis, :].astype(np.float32), T_VELO_2_CAM, R_RECT_0)[0]
+    for center, corner, score, c in zip(centers3d, corners3d, scores, clses):
+        box3d = lidar_to_camera_box3d(
+            center[np.newaxis, :].astype(np.float32), T_VELO_2_CAM, R_RECT_0)[0]
         box2d = lidar_box3d_to_camera_box(
-            box[np.newaxis, :].astype(np.float32), P2=P2, T_VELO_2_CAM=T_VELO_2_CAM, R_RECT_0=R_RECT_0)[0]
-        x, y, z, h, w, l, r = box3d
+            corner[np.newaxis, :].astype(np.float32), P2=P2, T_VELO_2_CAM=T_VELO_2_CAM, R_RECT_0=R_RECT_0)[0]
+        x, y, z, w, l, h, r = box3d
         #
-        box3d = [h, w, l, x, y, z, r]
+        box3d = [w, l, h, x, y, z, r]
         label.append(template.format(c, 0, 0, 0, *box2d, *box3d, float(score)))
 
     return label
 
 def test0():
-    boxes = np.array([[1,1,1,1,1,1,0], [2,2,2,1,1,1,0]])
+    centers3d = np.array([[1,1,1,1,1,1,0], [2,2,2,1,1,1,0]])
+    corners3d = np.random.rand(2, 8, 3) * 100
     clses = 'Car'
     scores = 0.5
     calib_dict = {}
     calib_dict['P2'] = np.random.rand(3, 4)
     calib_dict['Tr_velo_to_cam'] = np.random.rand(3, 4)
     calib_dict['R0_rect'] = np.random.rand(3, 3)
-    labels = to_kitti_result_line(boxes, clses, scores, calib_dict)
+    labels = to_kitti_result_line(centers3d, corners3d, clses, scores, calib_dict)
     for line in labels:
         print(line, end='')
 

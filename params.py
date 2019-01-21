@@ -33,7 +33,8 @@ para.box_in_labelmap_ratio = 0.6
 
 para.use_se_mod = False
 
-para.align_pc_with_img = True
+para.align_pc_with_img = False
 para.img_shape = (375, 1242)
+para.crop_pc_by_fov = True
 
-para.crop_pc_by_fov = False
+para.augment_data_use_db = True

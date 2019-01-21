@@ -4,7 +4,7 @@ import numpy as np
 from OpenGL.GL import glLineWidth
 from pyqtgraph.Qt import QtCore, QtGui
 import pyqtgraph.opengl as gl
-from kitti import read_label_obj, read_calib_file, compute_box_3d, corner_to_center_box3d
+from kitti import read_label_obj, read_calib_file, compute_lidar_box_3d, corner_to_center_box3d
 
 class plot3d(object):
     def __init__(self, title='null'):
@@ -76,7 +76,7 @@ KITTI_CALIB = '/mine/KITTI_DAT/calib/' + SPLIT
 
 def plot_obj(viewer, objs, calib, color):
     for obj in objs:
-        box3d_pts_3d = compute_box_3d(obj,
+        box3d_pts_3d = compute_lidar_box_3d(obj,
             calib['R0_rect'].reshape([3,3]),
             calib['Tr_velo_to_cam'].reshape([3,4]))
         viewer.plot_bbox_mesh(box3d_pts_3d, color)
@@ -120,6 +120,26 @@ def view_points_cloud(pc=None):
         pc = np.random.rand(1024, 3)
     pc_color = np.ones([pc.shape[0], 4])
     glview.add_points(pc, pc_color)
+    glview.view.show()
+    return app.exec()
+
+def view_pc(pc=None, boxes3d=None):
+    app = QtGui.QApplication([])
+    glview = plot3d()
+    if pc is None:
+        points = np.random.rand(1024, 3)
+        pc_color = np.ones([1024, 4])
+    else:
+        if pc.shape[1] == 3:
+            points = pc[:,:3]
+            pc_color = np.ones([pc.shape[0], 4])
+        elif pc.shape[1] == 4:
+            points = pc[:,:3]
+            pc_color = value_to_rgb(pc[:,3])
+    if boxes3d is not None:
+        for box3d in boxes3d:
+            glview.plot_bbox_mesh(box3d)
+    glview.add_points(points, pc_color)
     glview.view.show()
     return app.exec()
 
