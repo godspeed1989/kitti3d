@@ -5,6 +5,7 @@ from OpenGL.GL import glLineWidth
 from pyqtgraph.Qt import QtCore, QtGui
 import pyqtgraph.opengl as gl
 from kitti import read_label_obj, read_calib_file, compute_lidar_box_3d, corner_to_center_box3d
+from utils import remove_points_in_boxes
 
 class plot3d(object):
     def __init__(self, title='null'):
@@ -129,6 +130,11 @@ def view_pc(pc=None, boxes3d=None):
     if pc is None:
         points = np.random.rand(1024, 3)
         pc_color = np.ones([1024, 4])
+        s = 0.5
+        boxes3d = np.array([[[s,s,s],[-s,s,s],[-s,-s,s],[s,-s,s],
+                             [s,s,-s],[-s,s,-s],[-s,-s,-s],[s,-s,-s]]])
+        points, indices = remove_points_in_boxes(points, boxes3d)
+        pc_color = pc_color[indices]
     else:
         if pc.shape[1] == 3:
             points = pc[:,:3]

@@ -168,7 +168,7 @@ def eval_one_sample(net, input, config, label_list=None,
             plot_label_map(cls_pred.cpu().numpy())
 
         if to_kitti_file:
-            center3d, corners3d = corners2d_to_3d(corners, -2, 0.5)
+            center3d, corners3d = corners2d_to_3d(corners, -1.5, 0.0)
             line = to_kitti_result_line(center3d, corners3d, 'Car', scores, calib_dict)
             return line
 
@@ -223,7 +223,7 @@ def dump_net(config_name, device, db_selection):
             input, label_map = data
             input = input.to(device)
             label_map = label_map.to(device)
-            index, _, _, _, calib_dict = loader.dataset.get_label(image_id)
+            index, _, _, calib_dict = loader.dataset.get_label(image_id)
         lines = eval_one_sample(net, input[0], config, label_list=None,
                                 vis=False, to_kitti_file=True, calib_dict=calib_dict)
         txt_file = os.path.join(db_selection, index + '.txt')

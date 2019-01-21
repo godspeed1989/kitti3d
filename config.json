@@ -7,7 +7,7 @@
   "batch_size": 4,
   "loss_type": "CustomLoss",
   "optimizer": "ADAM",
-  "learning_rate": 0.001,
+  "learning_rate": 0.01,
   "momentum": 0.9,
   "lr_decay_every": 10,
   "max_epochs": 100,
@@ -19,6 +19,6 @@
   "frame_range": 8000,
   "num_workers": 4,
 
-  "cls_threshold": 0.4,
+  "cls_threshold": 0.5,
   "nms_iou_threshold": 0.1
 }

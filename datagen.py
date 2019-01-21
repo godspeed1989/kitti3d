@@ -12,7 +12,8 @@ from torchvision import transforms
 from scipy.spatial import Delaunay
 
 from params import para
-from utils import plot_bev, get_points_in_a_rotated_box, plot_label_map, trasform_label2metric
+from utils import (plot_bev, get_points_in_a_rotated_box, plot_label_map, trasform_label2metric,
+                   remove_points_in_boxes)
 from kitti import (read_label_obj, read_calib_file, compute_lidar_box_3d, lidar_center_to_corner_box3d,
                    corner_to_center_box3d, point_transform, angle_in_limit)
 from gt_db_sampler import DataBaseSampler
@@ -254,11 +255,17 @@ class KITTI(Dataset):
         if self.selection == 'test':
             return index, calib_dict
 
+        def obj_good_to_train(obj):
+            if para.filter_bad_targets:
+                return np.sqrt(obj.t[0]**2 + obj.t[2]**2) < 50
+            else:
+                return True
+
         objs = read_label_obj(label_path)
         boxes3d_corners = []
         labelmap_boxes3d_corners = []
         for obj in objs:
-            if obj.type in para.object_list:
+            if obj.type in para.object_list and obj_good_to_train(obj):
                 # use calibration to get accurate position (8, 3)
                 box3d_corners = compute_lidar_box_3d(obj,
                     calib_dict['R0_rect'].reshape([3,3]),
@@ -380,8 +387,8 @@ class KITTI(Dataset):
             all_corners = np.zeros([0,8,3])
             labelmap_corners = np.zeros([0,8,3])
 
-        if para.augment_data_use_db:
-            sampled = self.sampler.sample_all('Car', all_corners, 10)
+        if para.augment_data_use_db and all_corners.shape[0] > 0:
+            sampled = self.sampler.sample_all('Car', all_corners, 8)
             if sampled is not None:
                 sampled_boxes_centers3d = sampled["boxes_centers3d"]
                 # gt
@@ -392,6 +399,14 @@ class KITTI(Dataset):
                 labelmap_sampled_boxes_centers3d[:, 3:6] *= para.box_in_labelmap_ratio
                 labelmap_sampled_boxes_corners3d = lidar_center_to_corner_box3d(labelmap_sampled_boxes_centers3d)
                 labelmap_corners = np.concatenate([labelmap_corners, labelmap_sampled_boxes_corners3d], axis=0)
+                # remove
+                if para.remove_points_after_sample:
+                    boxes_corners3d = sampled_boxes_corners3d.copy()
+                    # just to call points_in_convex_polygon_3d_jit correct
+                    boxes_corners3d = boxes_corners3d[:,(0,3,2,1,4,7,6,5),:]
+                    boxes_corners3d[:,:4,2] = -10
+                    boxes_corners3d[:,4:,2] = 10
+                    scan, _ = remove_points_in_boxes(scan, boxes_corners3d)
                 scan = np.vstack([scan, sampled["points"]])
 
         num_target = all_corners.shape[0]
