@@ -387,7 +387,7 @@ class KITTI(Dataset):
             all_corners = np.zeros([0,8,3])
             labelmap_corners = np.zeros([0,8,3])
 
-        if para.augment_data_use_db and all_corners.shape[0] > 0:
+        if para.augment_data_use_db:
             sampled = self.sampler.sample_all('Car', all_corners, 8)
             if sampled is not None:
                 sampled_boxes_centers3d = sampled["boxes_centers3d"]

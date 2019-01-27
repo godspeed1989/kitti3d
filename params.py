@@ -38,6 +38,6 @@ para.img_shape = (375, 1242)
 para.crop_pc_by_fov = True
 
 para.augment_data_use_db = True
-para.remove_points_after_sample = True
+para.remove_points_after_sample = False
 
-para.filter_bad_targets = True
+para.filter_bad_targets = False
