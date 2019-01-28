@@ -18,6 +18,7 @@ from kitti import (read_label_obj, read_calib_file, compute_lidar_box_3d, lidar_
                    corner_to_center_box3d, point_transform, angle_in_limit)
 from gt_db_sampler import DataBaseSampler
 from pointcloud2RGB import makeBVFeature
+from voxel_gen import VoxelGenerator
 
 KITTI_PATH = '/mine/KITTI_DAT'
 
@@ -72,6 +73,13 @@ class KITTI(Dataset):
         self.target_std_dev = para.target_std_dev
         if para.augment_data_use_db:
             self.sampler = DataBaseSampler(KITTI_PATH, os.path.join(KITTI_PATH, "kitti_dbinfos_train.pkl"))
+        self.voxel_generator = VoxelGenerator(
+            voxel_size=[para.grid_size, para.grid_size, para.grid_size], 
+            point_cloud_range=[para.W1, para.L1, para.H1,
+                               para.W2, para.L2, para.H2],
+            max_num_points=30,
+            max_voxels=40000
+        )
 
     def __len__(self):
         return len(self.image_sets)
@@ -108,6 +116,8 @@ class KITTI(Dataset):
             scan1 = self.lidar_preprocess_rgb(scan)
             scan2 = self.lidar_preprocess(scan)
             scan = np.concatenate([scan1, scan2], axis=2)
+        if para.channel_type == 'voxel':
+            scan = self.lidar_preprocess_voxel(scan)
         scan = torch.from_numpy(scan)
         #
         label_map, _ = self.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners)
@@ -370,6 +380,16 @@ class KITTI(Dataset):
         RGB_Map = makeBVFeature(velo, size_ROI, size_cell)
 
         return RGB_Map
+
+    def lidar_preprocess_voxel(self, velo):
+        channels = int((para.H2 - para.H1) / para.grid_size)
+        velo_processed = np.zeros((*self.geometry['input_shape'][:2], channels), dtype=np.float32)
+        # X,Y,Z  ->  Z,Y,X
+        voxels, coords, num_points_per_voxel = self.voxel_generator.generate(velo.astype(np.float32))
+        for i,p in enumerate(coords):
+            inte = np.sum(voxels[i,:,-1]) / num_points_per_voxel[i]
+            velo_processed[p[1],p[2],p[0]] = inte
+        return velo_processed
 
     def augment_data(self, scan, boxes_3d_corners, labelmap_boxes_3d_corners):
         assert len(boxes_3d_corners) == len(labelmap_boxes_3d_corners)

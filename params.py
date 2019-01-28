@@ -28,7 +28,7 @@ para.input_shape = (800, 700)
 para.label_shape = (200, 175)
 
 # 'rgb', 'pixor', 'pixor-rgb', 'voxel'
-para.channel_type = 'rgb'
+para.channel_type = 'voxel'
 if para.channel_type == 'rgb':
     para.input_channels = 3
 if para.channel_type == 'pixor':
@@ -36,7 +36,7 @@ if para.channel_type == 'pixor':
 if para.channel_type == 'pixor-rgb':
     para.input_channels = int(3 + (para.H2 - para.H1) / para.grid_size + 1)
 if para.channel_type == 'voxel':
-    para.input_channels = int((para.H2 - para.H1) / para.grid_size + 1)
+    para.input_channels = int((para.H2 - para.H1) / para.grid_size)
 
 para.object_list = ['Car']
 

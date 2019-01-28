@@ -53,11 +53,9 @@ def plot_bev(velo_array, predict_list=None, label_list=None, window_name='GT'):
     :return: None
     '''
     intensity = np.zeros((velo_array.shape[0], velo_array.shape[1], 3), dtype=np.uint8)
-    val = 1 - velo_array[:, :, :-1].max(axis=2)
-    intensity[:, :, 0] = (val * 255).astype(np.uint8)
-    intensity[:, :, 1] = (val * 255).astype(np.uint8)
-    intensity[:, :, 2] = (val * 255).astype(np.uint8)
-    # FLip in the x direction
+    val = velo_array[:, :, :].max(axis=2, keepdims=True)
+    val = 1 - val / np.ptp(val)
+    intensity[:, :, :] = (val * 255).astype(np.uint8)
 
     if label_list is not None:
         for corners in label_list:
@@ -211,9 +209,8 @@ def get_model_name(name, config, para):
     # path += "bs{}_".format(config["batch_size"])
     # path += "lr{}".format(config["learning_rate"])
 
-    feat_len = config['input_channels']
     code_len = para.box_code_len
-    folder = "experiments_f{}_c{}".format(feat_len, code_len)
+    folder = "experiments_{}_c{}".format(para.channel_type, code_len)
     if para.use_se_mod:
         folder += "_se"
     if not os.path.exists(folder):
