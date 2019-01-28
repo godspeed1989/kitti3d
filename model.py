@@ -14,9 +14,9 @@ def conv3x3(in_planes, out_planes, stride=1, bias=False):
 
 def build_model(config, device, train=True):
     if config['net'] == 'PIXOR':
-        net = PIXOR(use_bn=config['use_bn'], input_channels=config['input_channels']).to(device)
+        net = PIXOR(use_bn=config['use_bn'], input_channels=para.input_channels).to(device)
     elif config['net'] == 'PIXOR_RFB':
-        net = PIXOR_RFB(use_bn=config['use_bn'], input_channels=config['input_channels']).to(device)
+        net = PIXOR_RFB(use_bn=config['use_bn'], input_channels=para.input_channels).to(device)
     else:
         raise NotImplementedError
     if config['loss_type'] == "MultiTaskLoss":

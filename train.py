@@ -66,15 +66,16 @@ def printgradnorm(self, grad_input, grad_output):
 def train_net(config_name, device, val=False):
     config, learning_rate, batch_size, max_epochs = load_config(config_name)
     train_data_loader = get_data_loader('train',
-        batch_size=batch_size, input_channels=config['input_channels'], shuffle=True, augment=True,
-        use_npy=config['use_npy'], frame_range=config['frame_range'], workers=config['num_workers'])
+        batch_size=batch_size, shuffle=True, augment=True,
+        frame_range=config['frame_range'], workers=config['num_workers'])
     val_data_loader = get_data_loader('val',
-        batch_size=1, input_channels=config['input_channels'], shuffle=False, augment=False,
-        use_npy=config['use_npy'], frame_range=config['frame_range'], workers=config['num_workers'])
+        batch_size=1, shuffle=False, augment=False,
+        frame_range=config['frame_range'], workers=config['num_workers'])
 
     net, criterion, optimizer, scheduler = build_model(config, device, train=True)
 
     print_log(dict2str(config))
+    print_log(dict2str(para))
     if config['resume_training']:
         saved_ckpt_path = get_model_name(config['old_ckpt_name'], config, para)
         net.load_state_dict(torch.load(saved_ckpt_path, map_location=device))
@@ -186,8 +187,7 @@ def get_eval_net(config_name, device, config):
 def eval_net(config_name, device):
     config, _, _, _ = load_config(config_name)
     net = get_eval_net(config_name, device, config)
-    loader = get_data_loader('val', batch_size=1, input_channels=config['input_channels'],
-                              use_npy=config['use_npy'], frame_range=config['frame_range'],
+    loader = get_data_loader('val', batch_size=1, frame_range=config['frame_range'],
                               workers=config['num_workers'], shuffle=False, augment=False)
 
     for image_id, data in enumerate(loader):
@@ -207,8 +207,7 @@ def dump_net(config_name, device, db_selection):
     config, _, _, _ = load_config(config_name)
     net = get_eval_net(config_name, device, config)
 
-    loader = get_data_loader(db_selection, batch_size=1, input_channels=config['input_channels'],
-                              use_npy=config['use_npy'], frame_range=config['frame_range'],
+    loader = get_data_loader(db_selection, batch_size=1, frame_range=config['frame_range'],
                               workers=config['num_workers'], shuffle=False, augment=False)
 
     if not os.path.exists(db_selection):

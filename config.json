@@ -14,8 +14,6 @@
   "save_every": 5,
 
   "use_bn": true,
-  "input_channels": 3,
-  "use_npy": false,
   "frame_range": 8000,
   "num_workers": 4,
 

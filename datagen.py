@@ -40,11 +40,9 @@ def extract_pc_in_fov(pc, fov, X_MIN, X_MAX, Z_MIN, Z_MAX):
     return points, inds
 
 class KITTI(Dataset):
-    def __init__(self, input_channels=36, frame_range=10000, use_npy=False,
-                 selection='train', aug_data=False):
+    def __init__(self, frame_range=10000, selection='train', aug_data=False):
         self.frame_range = frame_range
         self.velo = []
-        self.use_npy = use_npy
         self.aug_data = aug_data
         self.align_pc_with_img = para.align_pc_with_img
         self.crop_pc_by_fov = para.crop_pc_by_fov
@@ -56,9 +54,7 @@ class KITTI(Dataset):
         else:
             self.data_dir = 'training'
         self.image_sets = self.load_imageset()
-        # network input channels, 36 for PIXOR, 3 for RGB
-        # 36 = 3.5/0.1 + 1
-        self.input_channels = input_channels
+        self.input_channels = para.input_channels
         self.geometry = {
             'L1': para.L1,
             'L2': para.L2,
@@ -103,15 +99,15 @@ class KITTI(Dataset):
         else:
             scan, boxes_3d_corners, labelmap_boxes_3d_corners = \
                 raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners
-        if not self.use_npy:
-            if self.input_channels == 36:
-                scan = self.lidar_preprocess(scan)
-            elif self.input_channels == 3:
-                scan = self.lidar_preprocess_rgb(scan)
-            elif self.input_channels == 39:
-                scan1 = self.lidar_preprocess_rgb(scan)
-                scan2 = self.lidar_preprocess(scan)
-                scan = np.concatenate([scan1, scan2], axis=2)
+
+        if para.channel_type == 'rgb':
+            scan = self.lidar_preprocess_rgb(scan)
+        if para.channel_type == 'pixor':
+            scan = self.lidar_preprocess(scan)
+        if para.channel_type == 'pixor-rgb':
+            scan1 = self.lidar_preprocess_rgb(scan)
+            scan2 = self.lidar_preprocess(scan)
+            scan = np.concatenate([scan1, scan2], axis=2)
         scan = torch.from_numpy(scan)
         #
         label_map, _ = self.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners)
@@ -321,10 +317,7 @@ class KITTI(Dataset):
     def load_velo_scan(self, item):
         """Helper method to parse velodyne binary files into a list of scans."""
         filename = self.velo[item]
-        if self.use_npy:
-            scan = np.load(filename[:-4]+'.npy')
-        else:
-            scan = np.fromfile(filename, dtype=np.float32).reshape(-1, 4)
+        scan = np.fromfile(filename, dtype=np.float32).reshape(-1, 4)
         return scan
 
     def load_velo(self):
@@ -350,7 +343,8 @@ class KITTI(Dataset):
 
     def lidar_preprocess(self, velo):
         # generate intensity map
-        velo_processed = np.zeros((*self.geometry['input_shape'][:2], 36), dtype=np.float32)
+        channels = int((para.H2 - para.H1) / para.grid_size + 1)
+        velo_processed = np.zeros((*self.geometry['input_shape'][:2], channels), dtype=np.float32)
         intensity_map_count = np.zeros((velo_processed.shape[0], velo_processed.shape[1]))
         for i in range(velo.shape[0]):
             if self.point_in_roi(velo[i, :]):
@@ -388,7 +382,7 @@ class KITTI(Dataset):
             labelmap_corners = np.zeros([0,8,3])
 
         if para.augment_data_use_db:
-            sampled = self.sampler.sample_all('Car', all_corners, 8)
+            sampled = self.sampler.sample_all('Car', all_corners, 10)
             if sampled is not None:
                 sampled_boxes_centers3d = sampled["boxes_centers3d"]
                 # gt
@@ -445,11 +439,10 @@ class KITTI(Dataset):
             ret_labelmap_boxes_3d_corners.append(labelmap_corners[i*8 : (i+1)*8])
         return scan, ret_boxes_3d_corners, ret_labelmap_boxes_3d_corners
 
-def get_data_loader(db_selection, batch_size=4, input_channels=36,
-                    use_npy=False, frame_range=10000, workers=4,
+def get_data_loader(db_selection, batch_size=4,
+                    frame_range=10000, workers=4,
                     shuffle=False, augment=False):
-    dataset = KITTI(frame_range=frame_range, input_channels=input_channels, use_npy=use_npy,
-                    selection=db_selection, aug_data=augment)
+    dataset = KITTI(frame_range=frame_range, selection=db_selection, aug_data=augment)
     dataset.load_velo()
     data_loader = DataLoader(dataset, shuffle=shuffle, batch_size=batch_size, num_workers=workers)
 

@@ -22,10 +22,21 @@ para.L1 = -40.0
 para.L2 = 40.0
 para.W1 = 0.0
 para.W2 = 70.0
-para.H1 = -2.5
+para.H1 = -3
 para.H2 = 1.0
 para.input_shape = (800, 700)
 para.label_shape = (200, 175)
+
+# 'rgb', 'pixor', 'pixor-rgb', 'voxel'
+para.channel_type = 'rgb'
+if para.channel_type == 'rgb':
+    para.input_channels = 3
+if para.channel_type == 'pixor':
+    para.input_channels = int((para.H2 - para.H1) / para.grid_size + 1)
+if para.channel_type == 'pixor-rgb':
+    para.input_channels = int(3 + (para.H2 - para.H1) / para.grid_size + 1)
+if para.channel_type == 'voxel':
+    para.input_channels = int((para.H2 - para.H1) / para.grid_size + 1)
 
 para.object_list = ['Car']
 
