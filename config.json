@@ -9,7 +9,7 @@
   "optimizer": "ADAM",
   "learning_rate": 0.01,
   "momentum": 0.9,
-  "lr_decay_every": 10,
+  "lr_decay_every": 20,
   "max_epochs": 100,
   "save_every": 5,
 
