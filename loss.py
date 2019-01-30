@@ -4,36 +4,35 @@ import torch.nn.functional as F
 import ipdb
 import fire
 
+def focal_loss(x, y, eps=1e-5):
+    '''Focal loss.
+    Args:
+        x: (tensor) sized [BatchSize, Height, Width].
+        y: (tensor) sized [BatchSize, Height, Width].
+    Return:
+        (tensor) focal loss.
+    '''
+    alpha = 0.25
+    gamma = 2
+
+    x_t = x * (2 * y - 1) + (1 - y) # x_t = x     if label = 1
+                                    # x_t = 1 -x  if label = 0
+
+    alpha_t = torch.ones_like(x_t) * alpha
+    alpha_t = alpha_t * (2 * y - 1) + (1 - y)
+
+    loss = -alpha_t * (1-x_t)**gamma * (x_t+eps).log()
+
+    return loss.sum()
+
+def cross_entropy(x, y):
+    return F.binary_cross_entropy(input=x, target=y, reduction='sum')
+
 class CustomLoss(nn.Module):
     def __init__(self, device, num_classes=1):
         super(CustomLoss, self).__init__()
         self.num_classes = num_classes
         self.device = device
-
-    def focal_loss(self, x, y, eps=1e-5):
-        '''Focal loss.
-        Args:
-          x: (tensor) sized [BatchSize, Height, Width].
-          y: (tensor) sized [BatchSize, Height, Width].
-        Return:
-          (tensor) focal loss.
-        '''
-        alpha = 0.25
-        gamma = 2
-
-        x_t = x * (2 * y - 1) + (1 - y) # x_t = x     if label = 1
-                                        # x_t = 1 -x  if label = 0
-
-        alpha_t = torch.ones_like(x_t) * alpha
-        alpha_t = alpha_t * (2 * y - 1) + (1 - y)
-
-        loss = -alpha_t * (1-x_t)**gamma * (x_t+eps).log()
-
-        return loss.sum()
-
-    def cross_entropy(self, x, y):
-        return F.binary_cross_entropy(input=x, target=y, reduction='sum' )
-
 
     def forward(self, preds, targets):
         '''Compute loss between (loc_preds, loc_targets) and (cls_preds, cls_targets).
@@ -56,9 +55,9 @@ class CustomLoss(nn.Module):
         loc_targets = targets[..., 1:]
 
         ################################################################
-        cls_loss = self.focal_loss(cls_preds, cls_targets)
+        cls_loss = focal_loss(cls_preds, cls_targets)
         ################################################################
-        # cls_loss = self.cross_entropy(cls_preds, cls_targets)
+        # cls_loss = cross_entropy(cls_preds, cls_targets)
 
         # ipdb.set_trace()
 
@@ -81,7 +80,7 @@ class CustomLoss(nn.Module):
 #######################################################################################
 
 class GHMC_Loss:
-    def __init__(self, bins=10, momentum=0):
+    def __init__(self, bins=30, momentum=0.75):
         self.bins = bins
         self.momentum = momentum
         self.edges = [float(x) / bins for x in range(bins+1)]
@@ -109,7 +108,8 @@ class GHMC_Loss:
 
         valid = None
         if mask is not None:
-            valid = mask > 0
+            mask = mask.reshape([-1, 1])
+            valid = mask > 0.1
             tot = max(valid.float().sum().item(), 1.0)
         else:
             tot = input.size(0)
@@ -134,9 +134,8 @@ class GHMC_Loss:
             input, target, weights, reduction='sum') / tot
         return loss
 
-
 class GHMR_Loss:
-    def __init__(self, mu=0.02, bins=10, momentum=0):
+    def __init__(self, mu=0.02, bins=10, momentum=0.7):
         self.mu = mu
         self.bins = bins
         self.edges = [float(x) / bins for x in range(bins+1)]
@@ -170,7 +169,8 @@ class GHMR_Loss:
 
         valid = None
         if mask is not None:
-            valid = mask > 0
+            mask = mask.reshape([-1, 1])
+            valid = mask > 0.1
             tot = max(valid.float().sum().item(), 1.0)
         else:
             tot = input.size(0)
@@ -208,14 +208,15 @@ class GHM_Loss(nn.Module):
         # Compute loss between (loc_preds, loc_targets) and (cls_preds, cls_targets).
         batch_size = targets.size(0)
         image_size = targets.size(1) * targets.size(2)
-        cls_preds = preds[..., 0]
+        cls_preds = preds[..., 0:1]
         loc_preds = preds[..., 1:]
 
-        cls_targets = targets[..., 0]
+        cls_targets = targets[..., 0:1]
         loc_targets = targets[..., 1:]
 
-        cls_loss = self.ghm_cls_loss.calc(cls_preds, cls_targets)
-        reg_loss = self.ghm_reg_loss.calc(loc_preds, loc_targets)
+        #cls_loss = self.ghm_cls_loss.calc(cls_preds, cls_targets, cls_targets)
+        cls_loss = focal_loss(cls_preds, cls_targets) / (batch_size * image_size)
+        reg_loss = self.ghm_reg_loss.calc(loc_preds, loc_targets, cls_targets)
 
         return cls_loss + reg_loss, reg_loss.data, cls_loss.data
 
