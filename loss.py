@@ -78,6 +78,149 @@ class CustomLoss(nn.Module):
         cls_loss = cls_loss / (batch_size * image_size)
         return cls_loss + loc_loss, loc_loss.data, cls_loss.data
 
+#######################################################################################
+
+class GHMC_Loss:
+    def __init__(self, bins=10, momentum=0):
+        self.bins = bins
+        self.momentum = momentum
+        self.edges = [float(x) / bins for x in range(bins+1)]
+        self.edges[-1] += 1e-6
+        if momentum > 0:
+            self.acc_sum = [0.0 for _ in range(bins)]
+
+    def calc(self, input, target, mask=None):
+        """ Args:
+        input [batch_num, class_num]:
+            The prediction of classification fc layer.
+        target [batch_num, class_num]:
+            Binary target (0 or 1) for each sample each class. The value is -1
+            when the sample is ignored.
+        """
+        edges = self.edges
+        mmt = self.momentum
+        class_num = input.size(-1)
+        input = input.reshape([-1, class_num])
+        target = target.reshape([-1, class_num])
+        weights = torch.zeros_like(input)
+
+        # gradient length
+        g = torch.abs(input.detach() - target)
+
+        valid = None
+        if mask is not None:
+            valid = mask > 0
+            tot = max(valid.float().sum().item(), 1.0)
+        else:
+            tot = input.size(0)
+        n = 0  # n valid bins
+        for i in range(self.bins):
+            inds = (g >= edges[i]) & (g < edges[i+1])
+            if valid is not None:
+                inds = inds & valid
+            num_in_bin = inds.sum().item()
+            if num_in_bin > 0:
+                if mmt > 0:
+                    self.acc_sum[i] = mmt * self.acc_sum[i] \
+                        + (1 - mmt) * num_in_bin
+                    weights[inds] = tot / self.acc_sum[i]
+                else:
+                    weights[inds] = tot / num_in_bin
+                n += 1
+        if n > 0:
+            weights = weights / n
+
+        loss = F.binary_cross_entropy_with_logits(
+            input, target, weights, reduction='sum') / tot
+        return loss
+
+
+class GHMR_Loss:
+    def __init__(self, mu=0.02, bins=10, momentum=0):
+        self.mu = mu
+        self.bins = bins
+        self.edges = [float(x) / bins for x in range(bins+1)]
+        self.edges[-1] = 1e3
+        self.momentum = momentum
+        if momentum > 0:
+            self.acc_sum = [0.0 for _ in range(bins)]
+
+    def calc(self, input, target, mask=None):
+        """ Args:
+        input [batch_num, 4 (* class_num)]:
+            The prediction of box regression layer. Channel number can be 4 or
+            (4 * class_num) depending on whether it is class-agnostic.
+        target [batch_num, 4 (* class_num)]:
+            The target regression values with the same size of input.
+        """
+        mu = self.mu
+        edges = self.edges
+        mmt = self.momentum
+        channels = input.size(-1)
+        input = input.reshape([-1, channels])
+        target = target.reshape([-1, channels])
+
+        # ASL1 loss
+        diff = input - target
+        loss = torch.sqrt(diff * diff + mu * mu) - mu
+
+        # gradient length
+        g = torch.abs(diff / torch.sqrt(mu * mu + diff * diff)).detach()
+        weights = torch.zeros_like(g)
+
+        valid = None
+        if mask is not None:
+            valid = mask > 0
+            tot = max(valid.float().sum().item(), 1.0)
+        else:
+            tot = input.size(0)
+
+        n = 0  # n: valid bins
+        for i in range(self.bins):
+            inds = (g >= edges[i]) & (g < edges[i+1])
+            if valid is not None:
+                inds = inds & valid
+            num_in_bin = inds.sum().item()
+            if num_in_bin > 0:
+                n += 1
+                if mmt > 0:
+                    self.acc_sum[i] = mmt * self.acc_sum[i] \
+                        + (1 - mmt) * num_in_bin
+                    weights[inds] = tot / self.acc_sum[i]
+                else:
+                    weights[inds] = tot / num_in_bin
+        if n > 0:
+            weights /= n
+
+        loss = loss * weights
+        loss = loss.sum() / tot
+        return loss
+
+class GHM_Loss(nn.Module):
+    def __init__(self, device, num_classes=1):
+        super(GHM_Loss, self).__init__()
+        self.num_classes = num_classes
+        self.device = device
+        self.ghm_cls_loss = GHMC_Loss()
+        self.ghm_reg_loss = GHMR_Loss()
+
+    def forward(self, preds, targets):
+        # Compute loss between (loc_preds, loc_targets) and (cls_preds, cls_targets).
+        batch_size = targets.size(0)
+        image_size = targets.size(1) * targets.size(2)
+        cls_preds = preds[..., 0]
+        loc_preds = preds[..., 1:]
+
+        cls_targets = targets[..., 0]
+        loc_targets = targets[..., 1:]
+
+        cls_loss = self.ghm_cls_loss.calc(cls_preds, cls_targets)
+        reg_loss = self.ghm_reg_loss.calc(loc_preds, loc_targets)
+
+        return cls_loss + reg_loss, reg_loss.data, cls_loss.data
+
+#######################################################################################
+
 class SoftmaxFocalLoss(nn.Module):
     r'''Compute multi-label loss using softmax_cross_entropy_with_logits
     focal loss for Multi-Label classification
@@ -198,6 +341,8 @@ class MultiTaskLoss(nn.Module):
                 loss_i + 0.5*(self.sigma[i].pow(2)+1).log()
         return final_loss, loc_loss.data, cls_loss.data
 
+#######################################################################################
+
 def test():
     loss = CustomLoss(device="cpu")
     pred = torch.sigmoid(torch.randn(1, 2, 2, 3))
@@ -217,6 +362,15 @@ def test_MultiTask_loss():
     label = torch.tensor([[[[1, 0.4, 0.5], [0, 0.2, 0.5]]], [[[0, 0.1, 0.1], [1, 0.8, 0.4]]]])
     N = label.size(0)
     criterion = MultiTaskLoss(device='cpu', num_classes=1)
+    loss, cls_loss, loc_loss = criterion(pred, label)
+    print('N %d loc %.5f cls %.5f' % (N, loc_loss, cls_loss))
+    print('loss', loss)
+
+def test_GHM_Loss():
+    pred = torch.sigmoid(torch.randn(2, 1, 2, 3))
+    label = torch.tensor([[[[1, 0.4, 0.5], [0, 0.2, 0.5]]], [[[0, 0.1, 0.1], [1, 0.8, 0.4]]]])
+    N = label.size(0)
+    criterion = GHM_Loss(device='cpu', num_classes=1)
     loss, cls_loss, loc_loss = criterion(pred, label)
     print('N %d loc %.5f cls %.5f' % (N, loc_loss, cls_loss))
     print('loss', loss)

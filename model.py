@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from params import para
-from loss import CustomLoss, MultiTaskLoss
+from loss import CustomLoss, MultiTaskLoss, GHM_Loss
 
 def conv3x3(in_planes, out_planes, stride=1, bias=False):
     """3x3 convolution with padding"""
@@ -23,6 +23,8 @@ def build_model(config, device, train=True):
         criterion = MultiTaskLoss(device=device, num_classes=1)
     elif config['loss_type'] == "CustomLoss":
         criterion = CustomLoss(device=device, num_classes=1)
+    elif config['loss_type'] == "GHM_Loss":
+        criterion = GHM_Loss(device=device, num_classes=1)
     else:
         raise NotImplementedError
 
