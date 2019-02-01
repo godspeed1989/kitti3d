@@ -66,7 +66,6 @@ class KITTI(Dataset):
             'H2': para.H2,
             'input_shape': (*para.input_shape, self.input_channels),
             'label_shape': (*para.label_shape, 1+para.box_code_len),
-            'grid_size': para.grid_sizeLW,
             'ratio': para.ratio,
             'fov': 50,  # field of view in degree
         }
@@ -222,7 +221,7 @@ class KITTI(Dataset):
         return names
 
     def update_label_map(self, map, bev_corners, reg_target):
-        label_corners = bev_corners / self.geometry['grid_size'] / self.geometry['ratio']
+        label_corners = bev_corners / para.grid_sizeLW / self.geometry['ratio']
         # y to positive
         # XY in LiDAR <--> YX in label map
         label_corners[:, 1] += self.geometry['label_shape'][0] / 2.0
@@ -231,7 +230,7 @@ class KITTI(Dataset):
 
         for p in points:
             metric_x, metric_y = trasform_label2metric(np.array(p),
-                ratio=self.geometry['ratio'], grid_size=self.geometry['grid_size'],
+                ratio=self.geometry['ratio'], grid_size=para.grid_sizeLW,
                 base_height=self.geometry['label_shape'][0] // 2)
             actual_reg_target = np.copy(reg_target)
             if para.box_code_len == 6:
@@ -362,9 +361,9 @@ class KITTI(Dataset):
         intensity_map_count = np.zeros((velo_processed.shape[0], velo_processed.shape[1]))
         for i in range(velo.shape[0]):
             if self.point_in_roi(velo[i, :]):
-                x = int((velo[i, 1]-self.geometry['L1']) / self.geometry['grid_size'])
-                y = int((velo[i, 0]-self.geometry['W1']) / self.geometry['grid_size'])
-                z = int((velo[i, 2]-self.geometry['H1']) / self.geometry['grid_size'])
+                x = int((velo[i, 1]-self.geometry['L1']) / para.grid_sizeLW)
+                y = int((velo[i, 0]-self.geometry['W1']) / para.grid_sizeLW)
+                z = int((velo[i, 2]-self.geometry['H1']) / para.grid_sizeH)
                 velo_processed[x, y, z] = 1
                 velo_processed[x, y, -1] += velo[i, 3]
                 intensity_map_count[x, y] += 1
@@ -379,7 +378,7 @@ class KITTI(Dataset):
         size_ROI['minZ'] = self.geometry['H1']; size_ROI['maxZ'] = self.geometry['H2']
         size_ROI['Height'] = self.geometry['input_shape'][1]
         size_ROI['Width'] = self.geometry['input_shape'][0]
-        size_cell = self.geometry['grid_size']
+        size_cell = para.grid_sizeLW
 
         RGB_Map = makeBVFeature(velo, size_ROI, size_cell)
 
