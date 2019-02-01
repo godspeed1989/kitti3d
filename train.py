@@ -7,8 +7,7 @@ from tqdm import tqdm
 
 from params import para
 from datagen import get_data_loader
-from model import build_model
-from utils import get_model_name, load_config, plot_bev, plot_label_map, dict2str
+from utils import get_model_name, build_model, load_config, plot_bev, plot_label_map, dict2str
 from postprocess import non_max_suppression
 from kitti import corners2d_to_3d, to_kitti_result_line
 
@@ -22,19 +21,30 @@ def print_log(string, stdout=True, progress=None):
     if progress is not None:
         progress.set_description_str(string)
 
+def _get_net_input(data, device, batch_size):
+    net_input = []
+    if para.dense_net:
+        scan = data['scan']
+        net_input += [scan.to(device)]
+    else:
+        voxels_feature = data['voxels_feature']
+        coords_pad = data['coordinates']
+        net_input += [voxels_feature.to(device), coords_pad.to(device), batch_size]
+    return net_input
+
 def validate_batch(net, criterion, batch_size, val_data_loader, device):
     net.eval()
     val_loss = 0
     num_samples = 0
     for i, data in enumerate(val_data_loader):
-        input, label_map = data
-        input = input.to(device)
+        net_input = _get_net_input(data, device, data['cur_batch_size'])
+        label_map = data['label_map']
         label_map = label_map.to(device)
-        predictions = net(input)
+        predictions = net(*net_input)
         loss, loc_loss, cls_loss = criterion(predictions, label_map)
         val_loss += loss.data
         num_samples += label_map.shape[0]
-    return val_loss * batch_size / num_samples
+    return val_loss * para.batch_size / num_samples
 
 def printnorm(self, input, output):
     # input is a tuple of packed inputs
@@ -93,12 +103,12 @@ def train_net(config_name, device, val=False):
         print_log("Learning Rate for Epoch {} is {} ".format(epoch + 1, scheduler.get_lr()))
         pbar = tqdm(total=len(train_data_loader), initial=0, desc='train')
         for i, data in enumerate(train_data_loader):
-            input, label_map = data['scan'], data['label_map']
-            input = input.to(device)
+            net_input = _get_net_input(data, device, data['cur_batch_size'])
+            label_map = data['label_map']
             label_map = label_map.to(device)
             optimizer.zero_grad()
             # Forward
-            predictions = net(input)
+            predictions = net(*net_input)
             # ipdb.set_trace()
             loss, loc_loss, cls_loss = criterion(predictions, label_map)
             print_log('%.5f loc %.5f cls %.5f' % (loss.data, loc_loss, cls_loss), False, pbar)
@@ -116,7 +126,7 @@ def train_net(config_name, device, val=False):
             epoch + 1, time.time() - start_time, train_loss))
 
         if (epoch + 1) == max_epochs or (epoch + 1) % config['save_every'] == 0:
-            model_path = get_model_name(config['name']+'__epoch{}'.format(epoch+1), config, para)
+            model_path = get_model_name(para.net+'__epoch{}'.format(epoch+1), config, para)
             torch.save(net.state_dict(), model_path)
             print_log("Checkpoint saved at {}".format(model_path))
             if val:
@@ -127,19 +137,19 @@ def train_net(config_name, device, val=False):
     print_log("Total time elapsed: {:.2f} seconds".format(elapsed_time))
 
 
-def eval_one_sample(net, input, config, label_list=None,
+def eval_one_sample(net, net_input, config, label_list=None,
                     vis=True, to_kitti_file=True, calib_dict=None):
     threshold = config['cls_threshold']
     nms_iou_threshold = config['nms_iou_threshold']
     with torch.no_grad():
         # Forward Pass
         t_start = time.time()
-        print(input.shape)
-        pred = net(input.unsqueeze(0)).squeeze_(0)
+        pred = net(*net_input)
         print("Forward pass time", time.time() - t_start)
 
         # Select all the bounding boxes with classification score above threshold
         # [200, 175, 9]
+        pred = pred[0, ...]
         cls_pred = pred[..., 0]
         activation = cls_pred > threshold
 
@@ -165,8 +175,9 @@ def eval_one_sample(net, input, config, label_list=None,
         print("Non max suppression time:", time.time() - t_start)
 
         if vis:
-            input_np = input.cpu().numpy()
-            plot_bev(input_np, predict_list=corners, label_list=label_list, window_name='result')
+            if para.dense_net:
+                input_np = net_input[0][0].cpu().numpy()
+                plot_bev(input_np, predict_list=corners, label_list=label_list, window_name='result')
             plot_label_map(cls_pred.cpu().numpy())
 
         if to_kitti_file:
@@ -192,13 +203,11 @@ def eval_net(config_name, device):
                               workers=config['num_workers'], shuffle=False, augment=False)
 
     for image_id, data in enumerate(loader):
-        input, label_map = data['scan'], data['label_map']
-        input = input.to(device)
-        label_map = label_map.to(device)
+        net_input = _get_net_input(data, device, 1)
         # label_list [N,4,2]
         index, boxes_3d_corners, labelmap_boxes3d_corners, calib_dict = loader.dataset.get_label(image_id)
         label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners)
-        lines = eval_one_sample(net, input[0], config, label_list=label_list,
+        lines = eval_one_sample(net, net_input, config, label_list=label_list,
                                 vis=True, to_kitti_file=True, calib_dict=calib_dict)
         print('---{}---'.format(index))
         for l in lines:
@@ -215,16 +224,12 @@ def dump_net(config_name, device, db_selection):
         os.makedirs(db_selection, exist_ok=True)
 
     for image_id, data in enumerate(loader):
+        net_input = _get_net_input(data, device, 1)
         if db_selection == 'test':
-            input = data['scan']
-            input = input.to(device)
             index, calib_dict = loader.dataset.get_label(image_id)
         else:
-            input, label_map = data['scan'], data['label_map']
-            input = input.to(device)
-            label_map = label_map.to(device)
             index, _, _, calib_dict = loader.dataset.get_label(image_id)
-        lines = eval_one_sample(net, input[0], config, label_list=None,
+        lines = eval_one_sample(net, net_input, config, label_list=None,
                                 vis=False, to_kitti_file=True, calib_dict=calib_dict)
         txt_file = os.path.join(db_selection, index + '.txt')
         with open(txt_file, 'w') as f:

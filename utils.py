@@ -10,6 +10,10 @@ import numba
 import ipdb
 from params import para
 
+from model import PIXOR, PIXOR_RFB
+from model_sp import PIXOR_SPARSE
+from loss import CustomLoss, MultiTaskLoss, GHM_Loss
+
 def dict2str(dt):
     res = ''
     for key, val in dt.items():
@@ -191,7 +195,7 @@ def load_config(path):
         config = json.load(file)
 
     learning_rate = config["learning_rate"]
-    batch_size = config["batch_size"]
+    batch_size = para.batch_size
     max_epochs = config["max_epochs"]
 
     return config, learning_rate, batch_size, max_epochs
@@ -204,11 +208,6 @@ def get_model_name(name, config, para):
     Returns:
         path: A string with the hyperparameter name and value concatenated
     """
-    # path = "model_"
-    # path += "epoch{}_".format(config["max_epochs"])
-    # path += "bs{}_".format(config["batch_size"])
-    # path += "lr{}".format(config["learning_rate"])
-
     code_len = para.box_code_len
     folder = "experiments_{}_c{}".format(para.channel_type, code_len)
     if para.use_se_mod:
@@ -219,7 +218,7 @@ def get_model_name(name, config, para):
         path = os.path.join(folder, name)
     else:
         file_list = os.listdir(folder)
-        prefix_len = len(config["name"]) + len("__epoch")
+        prefix_len = len(para.net) + len("__epoch")
         file_list.sort(key = lambda x: int(x[prefix_len:]))
         path = os.path.join(folder, file_list[-1])
     return path
@@ -305,3 +304,37 @@ def remove_points_in_boxes(points, rbbox_corners):
     indices = points_in_convex_polygon_3d_jit(points[:, :3], surfaces)
     points = points[np.logical_not(indices.any(-1))]
     return points, np.logical_not(indices.any(-1))
+
+def build_model(config, device, train=True):
+    if para.net == 'PIXOR':
+        net = PIXOR(use_bn=config['use_bn'], input_channels=para.input_channels).to(device)
+    elif para.net == 'PIXOR_RFB':
+        net = PIXOR_RFB(use_bn=config['use_bn'], input_channels=para.input_channels).to(device)
+    elif para.net == 'PIXOR_SPARSE':
+        net = PIXOR_SPARSE(para.full_shape, use_bn=config['use_bn']).to(device)
+    else:
+        raise NotImplementedError
+
+    if config['loss_type'] == "MultiTaskLoss":
+        criterion = MultiTaskLoss(device=device, num_classes=1)
+    elif config['loss_type'] == "CustomLoss":
+        criterion = CustomLoss(device=device, num_classes=1)
+    elif config['loss_type'] == "GHM_Loss":
+        criterion = GHM_Loss(device=device, num_classes=1)
+    else:
+        raise NotImplementedError
+
+    if not train:
+        return net, criterion
+
+    if config['optimizer'] == 'ADAM':
+        optimizer = torch.optim.Adam(params=[{'params': criterion.parameters()},
+                                             {'params': net.parameters()}],
+                                     lr=config['learning_rate'])
+    elif config['optimizer'] == 'SGD':
+        optimizer = torch.optim.SGD(net.parameters(), lr=config['learning_rate'], momentum=config['momentum'])
+    else:
+        raise NotImplementedError
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['lr_decay_every'], gamma=0.5)
+
+    return net, criterion, optimizer, scheduler

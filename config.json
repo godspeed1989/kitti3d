@@ -1,16 +1,13 @@
 {
-  "net": "PIXOR",
-  "name": "PIXOR_3",
   "resume_training": false,
-  "old_ckpt_name": "ALLImage_10epoch",
+  "old_ckpt_name": "PIXOR__epoch100",
 
-  "batch_size": 4,
   "loss_type": "CustomLoss",
   "optimizer": "ADAM",
-  "learning_rate": 0.01,
+  "learning_rate": 0.05,
   "momentum": 0.9,
-  "lr_decay_every": 20,
-  "max_epochs": 100,
+  "lr_decay_every": 10,
+  "max_epochs": 200,
   "save_every": 5,
 
   "use_bn": true,

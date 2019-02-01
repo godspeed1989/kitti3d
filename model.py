@@ -4,43 +4,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from params import para
-from loss import CustomLoss, MultiTaskLoss, GHM_Loss
+from model_utils import Decoder
 
 def conv3x3(in_planes, out_planes, stride=1, bias=False):
     """3x3 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=bias)
-
-
-def build_model(config, device, train=True):
-    if config['net'] == 'PIXOR':
-        net = PIXOR(use_bn=config['use_bn'], input_channels=para.input_channels).to(device)
-    elif config['net'] == 'PIXOR_RFB':
-        net = PIXOR_RFB(use_bn=config['use_bn'], input_channels=para.input_channels).to(device)
-    else:
-        raise NotImplementedError
-    if config['loss_type'] == "MultiTaskLoss":
-        criterion = MultiTaskLoss(device=device, num_classes=1)
-    elif config['loss_type'] == "CustomLoss":
-        criterion = CustomLoss(device=device, num_classes=1)
-    elif config['loss_type'] == "GHM_Loss":
-        criterion = GHM_Loss(device=device, num_classes=1)
-    else:
-        raise NotImplementedError
-
-    if not train:
-        return net, criterion
-
-    if config['optimizer'] == 'ADAM':
-        optimizer = torch.optim.Adam(params=[{'params': criterion.parameters()},
-                                             {'params': net.parameters()}])
-    elif config['optimizer'] == 'SGD':
-        optimizer = torch.optim.SGD(net.parameters(), lr=config['learning_rate'], momentum=config['momentum'])
-    else:
-        raise NotImplementedError
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['lr_decay_every'], gamma=0.5)
-
-    return net, criterion, optimizer, scheduler
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -132,7 +101,7 @@ class BackBone(nn.Module):
 
         # Top-down layers
         self.deconv1 = nn.ConvTranspose2d(196, 128, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.deconv2 = nn.ConvTranspose2d(128, 96, kernel_size=3, stride=2, padding=1, output_padding=(1, 0))
+        self.deconv2 = nn.ConvTranspose2d(128, 96, kernel_size=3, stride=2, padding=1, output_padding=1)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -240,71 +209,6 @@ class Header(nn.Module):
         return cls, reg
 
 
-class Decoder(nn.Module):
-
-    def __init__(self):
-        super(Decoder, self).__init__()
-        self.geometry = [para.L1, para.L2, para.W1, para.W2]
-        self.grid_size = para.grid_sizeLW * para.ratio
-
-        self.target_mean = para.target_mean
-        self.target_std_dev = para.target_std_dev
-
-    def forward(self, x):
-        '''
-
-        :param x: Tensor 6-channel geometry
-        6 channel map of [cos(yaw), sin(yaw), log(x), log(y), w, l]
-        Shape of x: (B, C=6, H=200, W=175)
-        :return: Concatenated Tensor of 8 channel geometry map of bounding box corners
-        8 channel are [rear_left_x, rear_left_y,
-                        rear_right_x, rear_right_y,
-                        front_right_x, front_right_y,
-                        front_left_x, front_left_y]
-        Return tensor has a shape (B, C=8, H=200, W=175), and is located on the same device as x
-
-        '''
-        # Tensor in (B, C, H, W)
-
-        device = torch.device('cpu')
-        if x.is_cuda:
-            device = x.get_device()
-
-        for i in range(para.box_code_len):
-            x[:, i, :, :] = x[:, i, :, :] * self.target_std_dev[i] + self.target_mean[i]
-
-        if para.box_code_len == 6:
-            cos_t, sin_t, dx, dy, log_w, log_l = torch.chunk(x, 6, dim=1)
-            theta = torch.atan2(sin_t, cos_t)
-        elif para.box_code_len == 5:
-            theta, dx, dy, log_w, log_l = torch.chunk(x, 5, dim=1)
-        cos_t = torch.cos(theta)
-        sin_t = torch.sin(theta)
-
-        x = torch.arange(self.geometry[2], self.geometry[3], self.grid_size, dtype=torch.float32, device=device)
-        y = torch.arange(self.geometry[0], self.geometry[1], self.grid_size, dtype=torch.float32, device=device)
-        x = x[:para.label_shape[1]]
-        y = y[:para.label_shape[0]]
-
-        yy, xx = torch.meshgrid([y, x])
-        centre_y = yy + dy
-        centre_x = xx + dx
-        l = log_l.exp()
-        w = log_w.exp()
-        rear_left_x = centre_x - l/2 * cos_t - w/2 * sin_t
-        rear_left_y = centre_y - l/2 * sin_t + w/2 * cos_t
-        rear_right_x = centre_x - l/2 * cos_t + w/2 * sin_t
-        rear_right_y = centre_y - l/2 * sin_t - w/2 * cos_t
-        front_right_x = centre_x + l/2 * cos_t + w/2 * sin_t
-        front_right_y = centre_y + l/2 * sin_t - w/2 * cos_t
-        front_left_x = centre_x + l/2 * cos_t - w/2 * sin_t
-        front_left_y = centre_y + l/2 * sin_t + w/2 * cos_t
-
-        decoded_reg = torch.cat([rear_left_x, rear_left_y, rear_right_x, rear_right_y,
-                                 front_right_x, front_right_y, front_left_x, front_left_y], dim=1)
-
-        return decoded_reg
-
 class PIXOR(nn.Module):
     '''
     The input of PIXOR nn module is a tensor of [batch_size, height, weight, channel]
@@ -371,7 +275,7 @@ class BackBone_RFB(nn.Module):
 
         # Top-down layers
         self.deconv1 = nn.ConvTranspose2d(196, 128, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.deconv2 = nn.ConvTranspose2d(128, 96, kernel_size=3, stride=2, padding=1, output_padding=(1, 0))
+        self.deconv2 = nn.ConvTranspose2d(128, 96, kernel_size=3, stride=2, padding=1, output_padding=1)
 
     def forward(self, x):
         x = self.conv1(x)

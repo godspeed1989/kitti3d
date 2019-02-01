@@ -8,7 +8,7 @@ from torch.nn import functional as F
 import spconv
 
 from params import para, use_dense_net
-from model import Decoder
+from model_utils import Decoder
 
 class Empty(torch.nn.Module):
     def __init__(self, *args, **kwargs):
@@ -273,8 +273,8 @@ class RPNV2(nn.Module):
         self.blocks = nn.ModuleList(blocks)
         self.deblocks = nn.ModuleList(deblocks)
 
-        self.conv_cls = nn.Conv2d(sum(num_upsample_filters), num_class, 1)
-        self.conv_box = nn.Conv2d(sum(num_upsample_filters), para.box_code_len, 1)
+        self.conv_cls = nn.Conv2d(sum(num_upsample_filters), num_class, 3, stride=1, padding=1, bias=True)
+        self.conv_box = nn.Conv2d(sum(num_upsample_filters), para.box_code_len, 3, stride=1, padding=1, bias=True)
 
     def forward(self, x, bev=None):
         ups = []
@@ -287,7 +287,7 @@ class RPNV2(nn.Module):
         else:
             x = ups[0]
         reg = self.conv_box(x)
-        cls = self.conv_cls(x)
+        cls = torch.sigmoid(self.conv_cls(x))
 
         return cls, reg
 
@@ -343,7 +343,7 @@ def _prepare_voxel(dev):
         constant_values=0)
 
     voxels = torch.tensor(voxels, dtype=torch.float32, device=dev)       # (M, K, 4)
-    coords_pad = torch.tensor(coords_pad, dtype=torch.int32, device=dev) # (M, 3)
+    coords_pad = torch.tensor(coords_pad, dtype=torch.int32, device=dev) # (M, 3+1)
     num_points = torch.tensor(num_points, dtype=torch.int32, device=dev) # (M,)
     voxels_feature = voxel_feature_extractor(voxels, num_points) # (M, 4)
     grid_size = voxel_generator.grid_size

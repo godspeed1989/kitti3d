@@ -75,7 +75,7 @@ class KITTI(Dataset):
         if para.augment_data_use_db:
             self.sampler = DataBaseSampler(KITTI_PATH, os.path.join(KITTI_PATH, "kitti_dbinfos_train.pkl"))
         self.voxel_generator = VoxelGenerator(
-            voxel_size=[para.grid_sizeLW, para.grid_sizeLW, para.grid_sizeH], 
+            voxel_size=[para.grid_sizeLW, para.grid_sizeLW, para.grid_sizeH],
             point_cloud_range=[para.W1, para.L1, para.H1,
                                para.W2, para.L2, para.H2],
             max_num_points=30,
@@ -119,14 +119,14 @@ class KITTI(Dataset):
             ret['scan'] = np.concatenate([scan1, scan2], axis=2)
         if para.channel_type == 'voxel':
             ret['scan'] = self.lidar_preprocess_voxel(scan)
+        if para.channel_type == 'sparse':
+            ret['voxels_feature'], ret['coordinates'] = self.lidar_preprocess_sparse(scan)
 
         if self.selection != 'test':
             label_map, _ = self.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners)
             self.reg_target_transform(label_map)
             ret['label_map'] = label_map
 
-        for k,v in ret.items():
-            ret[k] = torch.from_numpy(v)
         return ret
 
     def crop_pc_using_fov(self, raw_scan):
@@ -395,6 +395,17 @@ class KITTI(Dataset):
             velo_processed[p[1],p[2],p[0]] = inte
         return velo_processed
 
+    def lidar_preprocess_sparse(self, velo):
+        # X,Y,Z  ->  Z,Y,X
+        voxels, coords, num_points_per_voxel = self.voxel_generator.generate(velo.astype(np.float32))
+        voxels = voxels.astype(np.float32)      # (M, K, 4)
+        coords = coords.astype(np.int32)        # (M, 3)
+        num_points_per_voxel = num_points_per_voxel.astype(np.int32)    # (M,)
+        # (M, C)
+        voxels_feature = voxels[:, :, :4].sum(axis=1, keepdims=False)
+        voxels_feature = voxels_feature / num_points_per_voxel.astype(voxels.dtype)[..., np.newaxis]
+        return voxels_feature, coords
+
     def augment_data(self, scan, boxes_3d_corners, labelmap_boxes_3d_corners):
         assert len(boxes_3d_corners) == len(labelmap_boxes_3d_corners)
         if len(boxes_3d_corners) > 0:
@@ -466,7 +477,7 @@ class KITTI(Dataset):
 def _worker_init_fn(worker_id):
     time_seed = np.array(time.time(), dtype=np.int32)
     np.random.seed(time_seed + worker_id)
-    print(f"WORKER {worker_id} seed:", np.random.get_state()[1][0])
+    #print(f"WORKER {worker_id} seed:", np.random.get_state()[1][0])
 
 def _merge_batch(batch_list, _unused=False):
     example_merged = defaultdict(list)
@@ -476,10 +487,10 @@ def _merge_batch(batch_list, _unused=False):
     ret = {}
 
     for key, elems in example_merged.items():
-        if key in ['voxels', 'num_points']:
+        if key in ['voxels_feature']:
             # [N,C] + [M,C] -> [M+N,C]
             ret[key] = np.concatenate(elems, axis=0)
-        elif key == 'coordinates': 
+        elif key == 'coordinates':
             # add batch number: [M, 3](xyz) -> [M, 4](bxyz)
             coors = []
             for i, coor in enumerate(elems):
@@ -492,6 +503,9 @@ def _merge_batch(batch_list, _unused=False):
         else:
             # [A,B] + [A,B] -> [2,A,B]
             ret[key] = np.stack(elems, axis=0)
+    for k,v in ret.items():
+        ret[k] = torch.from_numpy(v)
+    ret['cur_batch_size'] = len(batch_list)
     return ret
 
 def get_data_loader(db_selection, batch_size=4,
@@ -555,9 +569,17 @@ def find_reg_target_var_and_mean():
 
 def test():
     train_data_loader = get_data_loader('train', batch_size=2)
-    for i, (input, label_map) in enumerate(train_data_loader):
+    for i, data in enumerate(train_data_loader):
         print("Entry", i)
-        print("Input shape:", input.shape)
+        if para.dense_net:
+            scan = data['scan']
+            print('Scan Shape', scan.shape)
+        else:
+            voxels_feature = data['voxels_feature']
+            coords_pad = data['coordinates']
+            print('Voxel Feature Shape', voxels_feature.shape)
+            print('Coords_pad Shape', coords_pad.shape)
+        label_map = data['label_map']
         print("Label Map shape", label_map.shape)
         if i == 5:
             break
