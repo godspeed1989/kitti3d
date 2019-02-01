@@ -10,6 +10,7 @@ from copy import deepcopy
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from scipy.spatial import Delaunay
+from collections import defaultdict
 
 from params import para
 from utils import (plot_bev, get_points_in_a_rotated_box, plot_label_map, trasform_label2metric,
@@ -65,7 +66,7 @@ class KITTI(Dataset):
             'H2': para.H2,
             'input_shape': (*para.input_shape, self.input_channels),
             'label_shape': (*para.label_shape, 1+para.box_code_len),
-            'grid_size': para.grid_size,
+            'grid_size': para.grid_sizeLW,
             'ratio': para.ratio,
             'fov': 50,  # field of view in degree
         }
@@ -74,7 +75,7 @@ class KITTI(Dataset):
         if para.augment_data_use_db:
             self.sampler = DataBaseSampler(KITTI_PATH, os.path.join(KITTI_PATH, "kitti_dbinfos_train.pkl"))
         self.voxel_generator = VoxelGenerator(
-            voxel_size=[para.grid_size, para.grid_size, para.grid_size], 
+            voxel_size=[para.grid_sizeLW, para.grid_sizeLW, para.grid_sizeH], 
             point_cloud_range=[para.W1, para.L1, para.H1,
                                para.W2, para.L2, para.H2],
             max_num_points=30,
@@ -85,10 +86,13 @@ class KITTI(Dataset):
         return len(self.image_sets)
 
     def __getitem__(self, item):
+        ret = {}
         raw_scan = self.load_velo_scan(item)
 
         if self.selection == 'test':
+            assert self.aug_data == False
             index, calib_dict = self.get_label(item)
+            raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners = None, None
         else:
             index, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, calib_dict = self.get_label(item)
 
@@ -98,9 +102,6 @@ class KITTI(Dataset):
         if self.crop_pc_by_fov:
             raw_scan = self.crop_pc_using_fov(raw_scan)
 
-        if self.selection == 'test':
-            return torch.from_numpy(raw_scan)
-
         if self.aug_data:
             scan, boxes_3d_corners, labelmap_boxes_3d_corners = \
                 self.augment_data(raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners)
@@ -109,21 +110,24 @@ class KITTI(Dataset):
                 raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners
 
         if para.channel_type == 'rgb':
-            scan = self.lidar_preprocess_rgb(scan)
+            ret['scan'] = self.lidar_preprocess_rgb(scan)
         if para.channel_type == 'pixor':
-            scan = self.lidar_preprocess(scan)
+            ret['scan'] = self.lidar_preprocess(scan)
         if para.channel_type == 'pixor-rgb':
             scan1 = self.lidar_preprocess_rgb(scan)
             scan2 = self.lidar_preprocess(scan)
-            scan = np.concatenate([scan1, scan2], axis=2)
+            ret['scan'] = np.concatenate([scan1, scan2], axis=2)
         if para.channel_type == 'voxel':
-            scan = self.lidar_preprocess_voxel(scan)
-        scan = torch.from_numpy(scan)
-        #
-        label_map, _ = self.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners)
-        self.reg_target_transform(label_map)
-        label_map = torch.from_numpy(label_map)
-        return scan, label_map
+            ret['scan'] = self.lidar_preprocess_voxel(scan)
+
+        if self.selection != 'test':
+            label_map, _ = self.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners)
+            self.reg_target_transform(label_map)
+            ret['label_map'] = label_map
+
+        for k,v in ret.items():
+            ret[k] = torch.from_numpy(v)
+        return ret
 
     def crop_pc_using_fov(self, raw_scan):
         pc, ind = extract_pc_in_fov(raw_scan[:, :3], self.geometry['fov'],
@@ -353,7 +357,7 @@ class KITTI(Dataset):
 
     def lidar_preprocess(self, velo):
         # generate intensity map
-        channels = int((para.H2 - para.H1) / para.grid_size + 1)
+        channels = int((para.H2 - para.H1) / para.grid_sizeH + 1)
         velo_processed = np.zeros((*self.geometry['input_shape'][:2], channels), dtype=np.float32)
         intensity_map_count = np.zeros((velo_processed.shape[0], velo_processed.shape[1]))
         for i in range(velo.shape[0]):
@@ -382,7 +386,7 @@ class KITTI(Dataset):
         return RGB_Map
 
     def lidar_preprocess_voxel(self, velo):
-        channels = int((para.H2 - para.H1) / para.grid_size)
+        channels = int((para.H2 - para.H1) / para.grid_sizeH)
         velo_processed = np.zeros((*self.geometry['input_shape'][:2], channels), dtype=np.float32)
         # X,Y,Z  ->  Z,Y,X
         voxels, coords, num_points_per_voxel = self.voxel_generator.generate(velo.astype(np.float32))
@@ -459,12 +463,49 @@ class KITTI(Dataset):
             ret_labelmap_boxes_3d_corners.append(labelmap_corners[i*8 : (i+1)*8])
         return scan, ret_boxes_3d_corners, ret_labelmap_boxes_3d_corners
 
+def _worker_init_fn(worker_id):
+    time_seed = np.array(time.time(), dtype=np.int32)
+    np.random.seed(time_seed + worker_id)
+    print(f"WORKER {worker_id} seed:", np.random.get_state()[1][0])
+
+def _merge_batch(batch_list, _unused=False):
+    example_merged = defaultdict(list)
+    for example in batch_list:
+        for k, v in example.items():
+            example_merged[k].append(v)
+    ret = {}
+
+    for key, elems in example_merged.items():
+        if key in ['voxels', 'num_points']:
+            # [N,C] + [M,C] -> [M+N,C]
+            ret[key] = np.concatenate(elems, axis=0)
+        elif key == 'coordinates': 
+            # add batch number: [M, 3](xyz) -> [M, 4](bxyz)
+            coors = []
+            for i, coor in enumerate(elems):
+                coor_pad = np.pad(
+                    coor, ((0, 0), (1, 0)),
+                    mode='constant',
+                    constant_values=i)
+                coors.append(coor_pad)
+            ret[key] = np.concatenate(coors, axis=0)
+        else:
+            # [A,B] + [A,B] -> [2,A,B]
+            ret[key] = np.stack(elems, axis=0)
+    return ret
+
 def get_data_loader(db_selection, batch_size=4,
                     frame_range=10000, workers=4,
                     shuffle=False, augment=False):
     dataset = KITTI(frame_range=frame_range, selection=db_selection, aug_data=augment)
     dataset.load_velo()
-    data_loader = DataLoader(dataset, shuffle=shuffle, batch_size=batch_size, num_workers=workers)
+    data_loader = DataLoader(dataset,
+            shuffle=shuffle,
+            pin_memory=False,
+            batch_size=batch_size,
+            num_workers=workers,
+            collate_fn=_merge_batch,
+            worker_init_fn=_worker_init_fn)
 
     return data_loader
 
@@ -511,16 +552,6 @@ def find_reg_target_var_and_mean():
     print("Stds", stds)
     return means, stds
 
-def preprocess_to_npy(train=True):
-    k = KITTI(selection='trainval')
-    k.load_velo()
-    for item, name in enumerate(k.velo):
-        scan = k.load_velo_scan(item)
-        scan = k.lidar_preprocess(scan)
-        path = name[:-4] + '.npy'
-        np.save(path, scan)
-        print('Saved ', path)
-    return
 
 def test():
     train_data_loader = get_data_loader('train', batch_size=2)

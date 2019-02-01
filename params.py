@@ -15,28 +15,40 @@ elif para.box_code_len == 5:
 else:
     raise NotImplementedError
 
-para.grid_size = 0.1
-para.ratio = 4
-
 para.L1 = -40.0
 para.L2 = 40.0
 para.W1 = 0.0
-para.W2 = 70.0
+para.W2 = 70.4
 para.H1 = -3
 para.H2 = 1.0
-para.input_shape = (800, 700)
-para.label_shape = (200, 175)
+
+para._dense_net = True
+def use_dense_net(sel):
+    para._dense_net = sel
+    if para._dense_net:
+        para.grid_sizeLW = 0.1
+        para.grid_sizeH = 0.1
+        para.ratio = 4
+        para.input_shape = (800, 704)
+    else:
+        para.grid_sizeLW = 0.05
+        para.grid_sizeH = 0.1
+        para.ratio = 8
+        para.input_shape = (1600, 1408)
+use_dense_net(para._dense_net)
+
+para.label_shape = (200, 176)
 
 # 'rgb', 'pixor', 'pixor-rgb', 'voxel'
 para.channel_type = 'rgb'
 if para.channel_type == 'rgb':
     para.input_channels = 3
 if para.channel_type == 'pixor':
-    para.input_channels = int((para.H2 - para.H1) / para.grid_size + 1)
+    para.input_channels = int((para.H2 - para.H1) / para.grid_sizeH + 1)
 if para.channel_type == 'pixor-rgb':
-    para.input_channels = int(3 + (para.H2 - para.H1) / para.grid_size + 1)
+    para.input_channels = int(3 + (para.H2 - para.H1) / para.grid_sizeH + 1)
 if para.channel_type == 'voxel':
-    para.input_channels = int((para.H2 - para.H1) / para.grid_size)
+    para.input_channels = int((para.H2 - para.H1) / para.grid_sizeH)
 
 para.object_list = ['Car']
 

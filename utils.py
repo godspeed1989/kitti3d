@@ -59,14 +59,14 @@ def plot_bev(velo_array, predict_list=None, label_list=None, window_name='GT'):
 
     if label_list is not None:
         for corners in label_list:
-            plot_corners = corners / para.grid_size
+            plot_corners = corners / para.grid_sizeLW
             plot_corners[:, 1] += int(para.input_shape[0]//2)
             plot_corners = plot_corners.astype(int).reshape((-1, 1, 2))
             cv2.polylines(intensity, [plot_corners], True, (0, 0, 255), 2)
             cv2.line(intensity, tuple(plot_corners[2, 0]), tuple(plot_corners[3, 0]), (0, 255, 0), 2)
     if predict_list is not None:
         for corners in predict_list:
-            plot_corners = corners / para.grid_size
+            plot_corners = corners / para.grid_sizeLW
             plot_corners[:, 1] += int(para.input_shape[0]//2)
             plot_corners = plot_corners.astype(int).reshape((-1, 1, 2))
             cv2.polylines(intensity, [plot_corners], True, (255, 255, 0), 2)
@@ -230,9 +230,9 @@ def corner_to_surfaces_3d(corners):
     to surfaces that normal vectors all direct to internal.
 
     Args:
-        corners (float array, [N, 8, 3]): 3d box corners. 
+        corners (float array, [N, 8, 3]): 3d box corners.
     Returns:
-        surfaces (float array, [N, 6, 4, 3]): 
+        surfaces (float array, [N, 6, 4, 3]):
     """
     # box_corners: [N, 8, 3], must from corner functions in this module
     surfaces = np.array([
@@ -252,11 +252,11 @@ def points_in_convex_polygon_3d_jit(points,
     """check points is in 3d convex polygons.
     Args:
         points: [num_points, 3] array.
-        polygon_surfaces: [num_polygon, max_num_surfaces, 
-            max_num_points_of_surface, 3] 
+        polygon_surfaces: [num_polygon, max_num_surfaces,
+            max_num_points_of_surface, 3]
             array. all surfaces' normal vector must direct to internal.
             max_num_points_of_surface must at least 3.
-        num_surfaces: [num_polygon] array. indicate how many surfaces 
+        num_surfaces: [num_polygon] array. indicate how many surfaces
             a polygon contain
     Returns:
         [num_points, num_polygon] bool array.

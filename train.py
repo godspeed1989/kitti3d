@@ -92,7 +92,8 @@ def train_net(config_name, device, val=False):
         scheduler.step()
         print_log("Learning Rate for Epoch {} is {} ".format(epoch + 1, scheduler.get_lr()))
         pbar = tqdm(total=len(train_data_loader), initial=0, desc='train')
-        for i, (input, label_map) in enumerate(train_data_loader):
+        for i, data in enumerate(train_data_loader):
+            input, label_map = data['scan'], data['label_map']
             input = input.to(device)
             label_map = label_map.to(device)
             optimizer.zero_grad()
@@ -191,7 +192,7 @@ def eval_net(config_name, device):
                               workers=config['num_workers'], shuffle=False, augment=False)
 
     for image_id, data in enumerate(loader):
-        input, label_map = data
+        input, label_map = data['scan'], data['label_map']
         input = input.to(device)
         label_map = label_map.to(device)
         # label_list [N,4,2]
@@ -215,11 +216,11 @@ def dump_net(config_name, device, db_selection):
 
     for image_id, data in enumerate(loader):
         if db_selection == 'test':
-            input = data
+            input = data['scan']
             input = input.to(device)
             index, calib_dict = loader.dataset.get_label(image_id)
         else:
-            input, label_map = data
+            input, label_map = data['scan'], data['label_map']
             input = input.to(device)
             label_map = label_map.to(device)
             index, _, _, calib_dict = loader.dataset.get_label(image_id)

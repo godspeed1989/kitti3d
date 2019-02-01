@@ -245,7 +245,7 @@ class Decoder(nn.Module):
     def __init__(self):
         super(Decoder, self).__init__()
         self.geometry = [para.L1, para.L2, para.W1, para.W2]
-        self.grid_size = para.grid_size * para.ratio
+        self.grid_size = para.grid_sizeLW * para.ratio
 
         self.target_mean = para.target_mean
         self.target_std_dev = para.target_std_dev
@@ -283,6 +283,9 @@ class Decoder(nn.Module):
 
         x = torch.arange(self.geometry[2], self.geometry[3], self.grid_size, dtype=torch.float32, device=device)
         y = torch.arange(self.geometry[0], self.geometry[1], self.grid_size, dtype=torch.float32, device=device)
+        x = x[:para.label_shape[1]]
+        y = y[:para.label_shape[0]]
+
         yy, xx = torch.meshgrid([y, x])
         centre_y = yy + dy
         centre_x = xx + dx
