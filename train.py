@@ -3,6 +3,7 @@ import torch
 import time
 import ipdb
 import fire
+import numpy as np
 from tqdm import tqdm
 
 from params import para
@@ -178,6 +179,14 @@ def eval_one_sample(net, net_input, config, label_list=None,
             if para.dense_net:
                 input_np = net_input[0][0].cpu().numpy()
                 plot_bev(input_np, predict_list=corners, label_list=label_list, window_name='result')
+            else:
+                voxels_feature, coords_pad = net_input[0].cpu().numpy(), net_input[1].cpu().numpy()
+                channels = int((para.H2 - para.H1) / para.grid_sizeH)
+                velo_processed = np.zeros((*para.input_shape, channels), dtype=np.float32)
+                for i,p in enumerate(coords_pad):
+                    if p[0] == 0:
+                        velo_processed[p[2],p[3],p[1]] = voxels_feature[i,-1]
+                plot_bev(velo_processed, predict_list=corners, label_list=label_list, window_name='result')
             plot_label_map(cls_pred.cpu().numpy())
 
         if to_kitti_file:
@@ -206,10 +215,10 @@ def eval_net(config_name, device):
         net_input = _get_net_input(data, device, 1)
         # label_list [N,4,2]
         index, boxes_3d_corners, labelmap_boxes3d_corners, calib_dict = loader.dataset.get_label(image_id)
+        print('---{}---'.format(index))
         label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners)
         lines = eval_one_sample(net, net_input, config, label_list=label_list,
                                 vis=True, to_kitti_file=True, calib_dict=calib_dict)
-        print('---{}---'.format(index))
         for l in lines:
             print(l)
 

@@ -36,14 +36,20 @@ def use_dense_net(sel):
         para.channel_type = 'rgb'
         para.batch_size = 4
     else:
-        para.grid_sizeLW = 0.05
+        para.grid_sizeLW = 0.1
         para.grid_sizeH = 0.1
-        para.ratio = 8
-        para.input_shape = (1600, 1408)
-        para.full_shape = np.array([1408, 1600, 40])
+        if para.grid_sizeLW == 0.05:
+            para.ratio = 8
+            para.input_shape = (1600, 1408)
+            para.full_shape = np.array([1408, 1600, 40])
+            para.batch_size = 6
+        elif para.grid_sizeLW == 0.1:
+            para.ratio = 4
+            para.input_shape = (800, 704)
+            para.full_shape = np.array([704, 800, 40])
+            para.batch_size = 6
         para.net = 'PIXOR_SPARSE'
         para.channel_type = 'sparse'
-        para.batch_size = 6
 use_dense_net(para.dense_net)
 
 para.label_shape = (200, 176)

@@ -78,6 +78,11 @@ def plot_bev(velo_array, predict_list=None, label_list=None, window_name='GT'):
 
     # ipdb.set_trace()
     intensity = intensity.astype(np.uint8)
+    if intensity.shape[0] > 1000:
+        scale = intensity.shape[0] / 800.0
+        height, width = intensity.shape[:2]
+        dsize = (int(width / scale), int(height / scale))
+        intensity = cv2.resize(intensity, dsize, interpolation=cv2.INTER_AREA)
     cv2.imshow(window_name, intensity)
     cv2.imwrite(window_name+'.png', intensity)
 
@@ -311,7 +316,7 @@ def build_model(config, device, train=True):
     elif para.net == 'PIXOR_RFB':
         net = PIXOR_RFB(use_bn=config['use_bn'], input_channels=para.input_channels).to(device)
     elif para.net == 'PIXOR_SPARSE':
-        net = PIXOR_SPARSE(para.full_shape, use_bn=config['use_bn']).to(device)
+        net = PIXOR_SPARSE(para.full_shape, para.ratio, use_bn=config['use_bn']).to(device)
     else:
         raise NotImplementedError
 
