@@ -401,7 +401,7 @@ class KITTI(Dataset):
         coords = coords.astype(np.int32)        # (M, 3)
         num_points_per_voxel = num_points_per_voxel.astype(np.int32)    # (M,)
         # (M, C)
-        voxels_feature = voxels[:, :, :4].sum(axis=1, keepdims=False)
+        voxels_feature = voxels[:, :, 2:4].sum(axis=1, keepdims=False)
         voxels_feature = voxels_feature / num_points_per_voxel.astype(voxels.dtype)[..., np.newaxis]
         return voxels_feature, coords
 

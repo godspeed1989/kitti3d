@@ -397,7 +397,7 @@ def _prepare_voxel(dev):
     voxels = torch.tensor(voxels, dtype=torch.float32, device=dev)       # (M, K, 4)
     coords_pad = torch.tensor(coords_pad, dtype=torch.int32, device=dev) # (M, 3+1)
     num_points = torch.tensor(num_points, dtype=torch.int32, device=dev) # (M,)
-    voxels_feature = voxel_feature_extractor(voxels, num_points) # (M, 4)
+    voxels_feature = voxel_feature_extractor(voxels, num_points) # (M, C)
     grid_size = voxel_generator.grid_size
 
     return voxels_feature, coords_pad, grid_size
