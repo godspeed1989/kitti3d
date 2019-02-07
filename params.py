@@ -39,7 +39,7 @@ def use_dense_net(sel):
         para.grid_sizeLW = 0.1
         para.grid_sizeH = 0.1
         if para.grid_sizeLW == 0.05:
-            para.ratio = 8
+            para.ratio = 6
             para.input_shape = (1600, 1408)
             para.full_shape = np.array([1408, 1600, 40])
             para.batch_size = 6
