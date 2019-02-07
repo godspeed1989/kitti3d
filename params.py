@@ -39,7 +39,7 @@ def use_dense_net(sel):
         para.grid_sizeLW = 0.1
         para.grid_sizeH = 0.1
         if para.grid_sizeLW == 0.05:
-            para.ratio = 6
+            para.ratio = 8
             para.input_shape = (1600, 1408)
             para.full_shape = np.array([1408, 1600, 40])
             para.batch_size = 6
@@ -76,6 +76,7 @@ para.img_shape = (375, 1242)
 para.crop_pc_by_fov = True
 
 para.augment_data_use_db = True
+para.augment_max_samples = 8
 para.remove_points_after_sample = False
 
 para.filter_bad_targets = False
