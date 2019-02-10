@@ -15,13 +15,13 @@ elif para.box_code_len == 5:
 else:
     raise NotImplementedError
 
-para.estimate_bh = False
+para.estimate_bh = True
 if para.estimate_bh:
     para.box_code_len += 2 # 8, 7
     para.target_mean = np.resize(para.target_mean, para.box_code_len)
     para.target_std_dev = np.resize(para.target_std_dev, para.box_code_len)
-    para.target_mean[-2:] = np.array([1, 1], dtype=np.float32)
-    para.target_std_dev[-2:] = np.array([0, 0], dtype=np.float32)
+    para.target_mean[-2:] = np.array([-1.532, 0.052], dtype=np.float32)
+    para.target_std_dev[-2:] = np.array([0.34, 0.373], dtype=np.float32)
 
 para.L1 = -40.0
 para.L2 = 40.0
@@ -83,7 +83,7 @@ para.align_pc_with_img = False
 para.img_shape = (375, 1242)
 para.crop_pc_by_fov = True
 
-para.augment_data_use_db = True
+para.augment_data_use_db = False
 para.augment_max_samples = 8
 para.remove_points_after_sample = False
 

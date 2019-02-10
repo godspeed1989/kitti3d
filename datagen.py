@@ -246,7 +246,7 @@ class KITTI(Dataset):
             else:
                 raise NotImplementedError
             if para.estimate_bh:
-                actual_reg_target[-2:] = np.log(reg_target[-2:])
+                actual_reg_target[-2:] = reg_target[-2:]
 
             label_x = p[0]
             label_y = p[1]
@@ -295,8 +295,8 @@ class KITTI(Dataset):
     def get_reg_targets(self, box3d_pts_3d, labelmap_box3d_pts_3d):
         bev_corners = box3d_pts_3d[:4, :2]
         labelmap_bev_corners = labelmap_box3d_pts_3d[:4, :2]
-        head = np.max(box3d_pts_3d[:, 3])
-        bottom = np.min(box3d_pts_3d[:, 3])
+        head = np.max(box3d_pts_3d[:, 2])
+        bottom = np.min(box3d_pts_3d[:, 2])
         #
         centers = corner_to_center_box3d(box3d_pts_3d)
         x = centers[0]
