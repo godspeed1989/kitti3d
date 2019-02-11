@@ -15,6 +15,14 @@ elif para.box_code_len == 5:
 else:
     raise NotImplementedError
 
+para.estimate_bh = False
+if para.estimate_bh:
+    para.box_code_len += 2 # 8, 7
+    para.target_mean = np.resize(para.target_mean, para.box_code_len)
+    para.target_std_dev = np.resize(para.target_std_dev, para.box_code_len)
+    para.target_mean[-2:] = np.array([1, 1], dtype=np.float32)
+    para.target_std_dev[-2:] = np.array([0, 0], dtype=np.float32)
+
 para.L1 = -40.0
 para.L2 = 40.0
 para.W1 = 0.0

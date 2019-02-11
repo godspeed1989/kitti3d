@@ -233,18 +233,20 @@ class KITTI(Dataset):
                 ratio=self.geometry['ratio'], grid_size=para.grid_sizeLW,
                 base_height=self.geometry['label_shape'][0] // 2)
             actual_reg_target = np.copy(reg_target)
-            if para.box_code_len == 6:
+            if para.box_code_len == 6 or para.box_code_len == 8:
                 actual_reg_target[2] = reg_target[2] - metric_x
                 actual_reg_target[3] = reg_target[3] - metric_y
                 actual_reg_target[4] = np.log(reg_target[4])
                 actual_reg_target[5] = np.log(reg_target[5])
-            elif para.box_code_len == 5:
+            elif para.box_code_len == 5 or para.box_code_len == 7:
                 actual_reg_target[1] = reg_target[1] - metric_x
                 actual_reg_target[2] = reg_target[2] - metric_y
                 actual_reg_target[3] = np.log(reg_target[3])
                 actual_reg_target[4] = np.log(reg_target[4])
             else:
                 raise NotImplementedError
+            if para.estimate_bh:
+                actual_reg_target[-2:] = np.log(reg_target[-2:])
 
             label_x = p[0]
             label_y = p[1]
@@ -293,6 +295,8 @@ class KITTI(Dataset):
     def get_reg_targets(self, box3d_pts_3d, labelmap_box3d_pts_3d):
         bev_corners = box3d_pts_3d[:4, :2]
         labelmap_bev_corners = labelmap_box3d_pts_3d[:4, :2]
+        head = np.max(box3d_pts_3d[:, 3])
+        bottom = np.min(box3d_pts_3d[:, 3])
         #
         centers = corner_to_center_box3d(box3d_pts_3d)
         x = centers[0]
@@ -304,6 +308,10 @@ class KITTI(Dataset):
             reg_target = [np.cos(yaw), np.sin(yaw), x, y, w, l]
         elif para.box_code_len == 5:
             reg_target = [yaw, x, y, w, l]
+        elif para.box_code_len == 8:
+            reg_target = [np.cos(yaw), np.sin(yaw), x, y, w, l, bottom, head]
+        elif para.box_code_len == 7:
+            reg_target = [yaw, x, y, w, l, bottom, head]
         else:
             raise NotImplementedError
 

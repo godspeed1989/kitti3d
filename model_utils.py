@@ -39,6 +39,12 @@ class Decoder(nn.Module):
             theta = torch.atan2(sin_t, cos_t)
         elif para.box_code_len == 5:
             theta, dx, dy, log_w, log_l = torch.chunk(x, 5, dim=1)
+        elif para.box_code_len == 8:
+            cos_t, sin_t, dx, dy, log_w, log_l, log_bottom, log_head = torch.chunk(x, 8, dim=1)
+            theta = torch.atan2(sin_t, cos_t)
+        elif para.box_code_len == 7:
+            theta, dx, dy, log_w, log_l, log_bottom, log_head = torch.chunk(x, 7, dim=1)
+
         cos_t = torch.cos(theta)
         sin_t = torch.sin(theta)
 
@@ -64,4 +70,7 @@ class Decoder(nn.Module):
         decoded_reg = torch.cat([rear_left_x, rear_left_y, rear_right_x, rear_right_y,
                                  front_right_x, front_right_y, front_left_x, front_left_y], dim=1)
 
-        return decoded_reg
+        if para.box_code_len == 7 or para.box_code_len == 8:
+            return decoded_reg, torch.cat([log_bottom.exp(), log_head.exp()], dim=1)
+        else:
+            return decoded_reg

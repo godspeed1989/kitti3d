@@ -145,7 +145,10 @@ def eval_one_sample(net, net_input, config, label_list=None,
     with torch.no_grad():
         # Forward Pass
         t_start = time.time()
-        pred = net(*net_input)
+        if para.estimate_bh:
+            pred, pred_bh = net(*net_input)
+        else:
+            pred = net(*net_input)
         print("Forward pass time", time.time() - t_start)
 
         # Select all the bounding boxes with classification score above threshold
@@ -165,6 +168,11 @@ def eval_one_sample(net, net_input, config, label_list=None,
         for i in range(1, 9):
             corners[:, i - 1] = torch.masked_select(pred[..., i], activation)
         corners = corners.view(-1, 4, 2).cpu().numpy()
+        if para.estimate_bh:
+            bh = torch.zeros((num_boxes, 2))
+            bh[..., 0] = torch.masked_select(pred_bh[..., 0], activation)
+            bh[..., 1] = torch.masked_select(pred_bh[..., 1], activation)
+            bh = bh.cpu().numpy()
 
         scores = torch.masked_select(pred[..., 0], activation).cpu().numpy()
 
@@ -173,6 +181,8 @@ def eval_one_sample(net, net_input, config, label_list=None,
         selected_ids = non_max_suppression(corners, scores, nms_iou_threshold)
         corners = corners[selected_ids]
         scores = scores[selected_ids]
+        if para.estimate_bh:
+            bh = bh[selected_ids]
         print("Non max suppression time:", time.time() - t_start)
 
         if vis:
@@ -190,7 +200,7 @@ def eval_one_sample(net, net_input, config, label_list=None,
             plot_label_map(cls_pred.cpu().numpy())
 
         if to_kitti_file:
-            center3d, corners3d = corners2d_to_3d(corners, -1.5, 0.0)
+            center3d, corners3d = corners2d_to_3d(corners, bh[:,0], bh[:,1])
             line = to_kitti_result_line(center3d, corners3d, 'Car', scores, calib_dict)
             return line
 
