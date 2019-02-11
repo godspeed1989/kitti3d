@@ -244,7 +244,7 @@ class PIXOR(nn.Module):
         cls = cls.permute(0, 2, 3, 1)
         reg = reg.permute(0, 2, 3, 1)
 
-        if para.estimate_bh:
+        if self.use_decode and para.estimate_bh:
             return torch.cat([cls, reg], dim=3), bh.permute(0, 2, 3, 1)
         else:
             return torch.cat([cls, reg], dim=3)
@@ -364,7 +364,7 @@ class PIXOR_RFB(nn.Module):
         cls = cls.permute(0, 2, 3, 1)
         reg = reg.permute(0, 2, 3, 1)
 
-        if para.estimate_bh:
+        if self.use_decode and para.estimate_bh:
             return torch.cat([cls, reg], dim=3), bh.permute(0, 2, 3, 1)
         else:
             return torch.cat([cls, reg], dim=3)
