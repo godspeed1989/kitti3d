@@ -200,7 +200,10 @@ def eval_one_sample(net, net_input, config, label_list=None,
             plot_label_map(cls_pred.cpu().numpy())
 
         if to_kitti_file:
-            center3d, corners3d = corners2d_to_3d(corners, bh[:,0], bh[:,1])
+            if para.estimate_bh:
+                center3d, corners3d = corners2d_to_3d(corners, bh[:,0], bh[:,1])
+            else:
+                center3d, corners3d = corners2d_to_3d(corners, np.array([-1.5]), np.array([.1]))
             line = to_kitti_result_line(center3d, corners3d, 'Car', scores, calib_dict)
             return line
 

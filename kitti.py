@@ -324,12 +324,13 @@ def lidar_box3d_to_camera_box(corners3d, cal_projection=False, P2=None, T_VELO_2
 
 def corners_2d_to_3d(corners2d, bottom_z, top_z):
     # (N, 4, 2) -> (N, 8, 3)
+    # bottom_z, top_z: (1,) or (N,)
     N = corners2d.shape[0]
     corners3d = np.zeros((N, 8, 3), dtype=corners2d.dtype)
     corners3d[:,:4,:2] = corners2d
     corners3d[:,4:,:2] = corners2d
-    corners3d[:,:4,2] = bottom_z
-    corners3d[:,4:,2] = top_z
+    corners3d[:,:4,2] = bottom_z[:, np.newaxis]
+    corners3d[:,4:,2] = top_z[:, np.newaxis]
     return corners3d
 
 def corners2d_to_3d(corners2d, bottom_z, top_z):

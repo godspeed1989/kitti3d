@@ -70,7 +70,7 @@ class Decoder(nn.Module):
         decoded_reg = torch.cat([rear_left_x, rear_left_y, rear_right_x, rear_right_y,
                                  front_right_x, front_right_y, front_left_x, front_left_y], dim=1)
 
-        if para.box_code_len == 7 or para.box_code_len == 8:
+        if para.estimate_bh:
             return decoded_reg, torch.cat([log_bottom, log_head], dim=1)
         else:
             return decoded_reg

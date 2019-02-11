@@ -368,13 +368,19 @@ class PIXOR_SPARSE(nn.Module):
         cls, reg = self.rpn(dense_map)
 
         if self.use_decode:
-            reg = self.corner_decoder(reg)
+            if para.estimate_bh:
+                reg, bh = self.corner_decoder(reg)
+            else:
+                reg = self.corner_decoder(reg)
 
         # Return tensor(Batch_size, height, width, channels)
         cls = cls.permute(0, 2, 3, 1)
         reg = reg.permute(0, 2, 3, 1)
 
-        return torch.cat([cls, reg], dim=3)
+        if para.estimate_bh:
+            return torch.cat([cls, reg], dim=3), bh.permute(0, 2, 3, 1)
+        else:
+            return torch.cat([cls, reg], dim=3)
 
 def _prepare_voxel(dev):
     # generate voxel features

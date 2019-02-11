@@ -235,13 +235,19 @@ class PIXOR(nn.Module):
         cls, reg = self.header(features)
 
         if self.use_decode:
-            reg = self.corner_decoder(reg)
+            if para.estimate_bh:
+                reg, bh = self.corner_decoder(reg)
+            else:
+                reg = self.corner_decoder(reg)
 
         # Return tensor(Batch_size, height, width, channels)
         cls = cls.permute(0, 2, 3, 1)
         reg = reg.permute(0, 2, 3, 1)
 
-        return torch.cat([cls, reg], dim=3)
+        if para.estimate_bh:
+            return torch.cat([cls, reg], dim=3), bh.permute(0, 2, 3, 1)
+        else:
+            return torch.cat([cls, reg], dim=3)
 
 ###################################################################################################
 
@@ -349,13 +355,19 @@ class PIXOR_RFB(nn.Module):
         cls, reg = self.header(features)
 
         if self.use_decode:
-            reg = self.corner_decoder(reg)
+            if para.estimate_bh:
+                reg, bh = self.corner_decoder(reg)
+            else:
+                reg = self.corner_decoder(reg)
 
         # Return tensor(Batch_size, height, width, channels)
         cls = cls.permute(0, 2, 3, 1)
         reg = reg.permute(0, 2, 3, 1)
 
-        return torch.cat([cls, reg], dim=3)
+        if para.estimate_bh:
+            return torch.cat([cls, reg], dim=3), bh.permute(0, 2, 3, 1)
+        else:
+            return torch.cat([cls, reg], dim=3)
 
 class BasicConvRFB(nn.Module):
     def __init__(self, in_planes, out_planes, kernel_size, stride=1, padding=0, dilation=1, groups=1, relu=True, bn=True, bias=False):
