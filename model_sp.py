@@ -8,7 +8,7 @@ from torch.nn import functional as F
 import spconv
 
 from params import para, use_dense_net
-from model_utils import Decoder
+from model_utils import Decoder, Header, conv3x3
 
 class Empty(torch.nn.Module):
     def __init__(self, *args, **kwargs):
@@ -325,8 +325,7 @@ class RPNV2(nn.Module):
         self.blocks = nn.ModuleList(blocks)
         self.deblocks = nn.ModuleList(deblocks)
 
-        self.conv_cls = nn.Conv2d(sum(num_upsample_filters), num_class, 3, stride=1, padding=1, bias=True)
-        self.conv_box = nn.Conv2d(sum(num_upsample_filters), para.box_code_len, 3, stride=1, padding=1, bias=True)
+        self.header = Header(input_channels=sum(num_upsample_filters), use_bn=use_norm)
 
     def forward(self, x, bev=None):
         ups = []
@@ -338,8 +337,7 @@ class RPNV2(nn.Module):
             x = torch.cat(ups, dim=1)
         else:
             x = ups[0]
-        reg = self.conv_box(x)
-        cls = torch.sigmoid(self.conv_cls(x))
+        cls, reg = self.header(x)
 
         return cls, reg
 
@@ -438,7 +436,10 @@ def test1():
 
     net = PIXOR_SPARSE(grid_size, para.ratio, use_bn=True, decode=True).to(dev)
     out = net(voxels_feature, coords_pad, batch_size=1)
-    print('out', out.size())
+    if net.use_decode and para.estimate_bh:
+        print('out', out[0].size(), out[1].size())
+    else:
+        print('out', out.size())
 
 if __name__ == '__main__':
     fire.Fire()

@@ -4,12 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from params import para
-from model_utils import Decoder
-
-def conv3x3(in_planes, out_planes, stride=1, bias=False):
-    """3x3 convolution with padding"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                     padding=1, bias=bias)
+from model_utils import Decoder, Header, conv3x3
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -168,45 +163,6 @@ class BackBone(nn.Module):
         '''
         _, _, H, W = y.size()
         return F.upsample(x, size=(H, W), mode='bilinear') + y
-
-
-class Header(nn.Module):
-
-    def __init__(self, use_bn=True):
-        super(Header, self).__init__()
-
-        self.use_bn = use_bn
-        bias = not use_bn
-        self.conv1 = conv3x3(96, 96, bias=bias)
-        self.bn1 = nn.BatchNorm2d(96)
-        self.conv2 = conv3x3(96, 96, bias=bias)
-        self.bn2 = nn.BatchNorm2d(96)
-        self.conv3 = conv3x3(96, 96, bias=bias)
-        self.bn3 = nn.BatchNorm2d(96)
-        self.conv4 = conv3x3(96, 96, bias=bias)
-        self.bn4 = nn.BatchNorm2d(96)
-
-        self.clshead = conv3x3(96, 1, bias=True)
-        self.reghead = conv3x3(96, para.box_code_len, bias=True)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        if self.use_bn:
-            x = self.bn1(x)
-        x = self.conv2(x)
-        if self.use_bn:
-            x = self.bn2(x)
-        x = self.conv3(x)
-        if self.use_bn:
-            x = self.bn3(x)
-        x = self.conv4(x)
-        if self.use_bn:
-            x = self.bn4(x)
-
-        cls = torch.sigmoid(self.clshead(x))
-        reg = self.reghead(x)
-
-        return cls, reg
 
 
 class PIXOR(nn.Module):

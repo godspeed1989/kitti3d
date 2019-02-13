@@ -7,7 +7,7 @@
   "learning_rate": 0.01,
   "momentum": 0.9,
   "lr_decay_every": 10,
-  "max_epochs": 200,
+  "max_epochs": 150,
   "save_every": 5,
 
   "use_bn": true,
