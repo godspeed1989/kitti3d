@@ -58,7 +58,7 @@ def plot_bev(velo_array, predict_list=None, label_list=None, window_name='GT'):
     '''
     intensity = np.zeros((velo_array.shape[0], velo_array.shape[1], 3), dtype=np.uint8)
     val = velo_array[:, :, :].max(axis=2, keepdims=True)
-    val = 1 - val / np.ptp(val)
+    val = 1 - val / (np.ptp(val) + 1e-5)
     intensity[:, :, :] = (val * 255).astype(np.uint8)
 
     if label_list is not None:

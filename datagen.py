@@ -17,7 +17,7 @@ from utils import (plot_bev, get_points_in_a_rotated_box, plot_label_map, trasfo
                    remove_points_in_boxes)
 from kitti import (read_label_obj, read_calib_file, compute_lidar_box_3d, lidar_center_to_corner_box3d,
                    corner_to_center_box3d, point_transform, angle_in_limit)
-from gt_db_sampler import DataBaseSampler
+from gt_db_sampler import DataBaseSampler, fake_boxes_corners3d
 from pointcloud2RGB import makeBVFeature
 from voxel_gen import VoxelGenerator
 
@@ -424,7 +424,8 @@ class KITTI(Dataset):
             labelmap_corners = np.zeros([0,8,3])
 
         if para.augment_data_use_db and all_corners.shape[0] > 0:
-            sampled = self.sampler.sample_all('Car', all_corners, para.augment_max_samples)
+            collision_corners = np.concatenate([all_corners, fake_boxes_corners3d], axis=0)
+            sampled = self.sampler.sample_all('Car', collision_corners, para.augment_max_samples)
             if sampled is not None:
                 sampled_boxes_centers3d = sampled["boxes_centers3d"]
                 # gt

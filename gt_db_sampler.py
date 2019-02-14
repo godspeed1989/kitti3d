@@ -228,7 +228,8 @@ class DataBaseSampler:
         while len(samples) < sampled_num:
             all_samples = self._sampler_dict[class_name].sample(sampled_num)
             for s in all_samples:
-                if s['difficulty'] <= 1 and s['num_points_in_gt'] > 66:
+                #if s['difficulty'] <= 1 and s['num_points_in_gt'] > 66:
+                if s['num_points_in_gt'] > 10:
                     samples.append(s)
         samples = copy.deepcopy(samples)
         return samples
@@ -306,18 +307,23 @@ class DataBaseSampler:
         return ret
 
 
+fake_boxes = np.array([[0,0,-1,42,2,3,0],
+                       [2,0,-1,42,2,3,0]])
+for y in range(6, 9, 2):
+    fake_boxes = np.concatenate([fake_boxes,
+        np.array([[35,y,-1,2,70,3,0], [35,-y,-1,2,70,3,0]])], axis=0)
+
+fake_boxes_corners3d = lidar_center_to_corner_box3d(fake_boxes)
+
 if __name__ == '__main__':
     sampler = DataBaseSampler(root_path, database_info_path)
     sampler.print_class_name()
     # test1
-    samples = sampler.sample_n_obj('Car', 5)
+    samples = sampler.sample_n_obj('Car', 15)
     # test2
     samples_points = sampler.load_sample_points(samples)
     # test3
-    gt_boxes = np.array([[1,1,1,8,10,1,0]])
-    gt_boxes_corners3d = lidar_center_to_corner_box3d(gt_boxes)
-
-    sampled = sampler.sample_all('Car', gt_boxes_corners3d)
+    sampled = sampler.sample_all('Car', fake_boxes_corners3d)
     if sampled is not None:
         print(sampled["points"].shape, sampled["names"], sep='\n')
         sampled_gt_boxes = sampled["boxes_centers3d"]
@@ -325,5 +331,5 @@ if __name__ == '__main__':
         # (N, 7) -> (N, 8, 3)
         sampled_boxes_corners3d = lidar_center_to_corner_box3d(sampled_gt_boxes)
 
-        all_box3d = np.concatenate((gt_boxes_corners3d, sampled_boxes_corners3d), axis=0)
+        all_box3d = np.concatenate((fake_boxes_corners3d, sampled_boxes_corners3d), axis=0)
         view_pc(sampled['points'], all_box3d)
