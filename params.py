@@ -58,6 +58,7 @@ def use_dense_net(sel):
             para.batch_size = 6
         para.net = 'PIXOR_SPARSE'
         para.channel_type = 'sparse'
+        para.voxel_feature_len = 4
 use_dense_net(para.dense_net)
 
 para.label_shape = (200, 176)

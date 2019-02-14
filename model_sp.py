@@ -128,7 +128,6 @@ class SpMiddleFHD(nn.Module):
                  dense_shape,
                  ratio,
                  use_norm=True,
-                 num_input_features=2,
                  name='SpMiddleFHD'):
         super(SpMiddleFHD, self).__init__()
         self.name = name
@@ -151,7 +150,7 @@ class SpMiddleFHD(nn.Module):
             self.sparse_shape = np.array(dense_shape[1:4]) + [1, 0, 0]
             # input: # [1600, 1400, 41]
             self.middle_conv = spconv.SparseSequential(
-                SubMConv3d(num_input_features, 16, 3, indice_key="subm0"),
+                SubMConv3d(para.voxel_feature_len, 16, 3, indice_key="subm0"),
                 BatchNorm1d(16),
                 nn.ReLU(),
                 SubMConv3d(16, 16, 3, indice_key="subm0"),
@@ -201,26 +200,26 @@ class SpMiddleFHD(nn.Module):
             self.sparse_shape = np.array(dense_shape[1:4])
             # input: # [800, 700, 40]
             self.middle_conv = spconv.SparseSequential(
-                SubMConv3d(num_input_features, 32, 3, indice_key="subm0"),
+                SubMConv3d(para.voxel_feature_len, 32, 3, indice_key="subm0", dilation=1),
                 BatchNorm1d(32),
                 nn.ReLU(),
-                SubMConv3d(32, 32, 3, indice_key="subm0"),
+                SubMConv3d(32, 32, 3, indice_key="subm0", dilation=2),
                 BatchNorm1d(32),
                 nn.ReLU(),
-                SubMConv3d(32, 32, 3, indice_key="subm0"),
+                SubMConv3d(32, 32, 3, indice_key="subm0", dilation=3),
                 BatchNorm1d(32),
                 nn.ReLU(),
                 SpConv3d(32, 32, 3, 2, padding=1), # [800, 700, 40] -> [400, 350, 20]
                 BatchNorm1d(32),
                 nn.ReLU(),
                 #
-                SubMConv3d(32, 64, 3, indice_key="subm1"),
+                SubMConv3d(32, 64, 3, indice_key="subm1", dilation=1),
                 BatchNorm1d(64),
                 nn.ReLU(),
-                SubMConv3d(64, 64, 3, indice_key="subm1"),
+                SubMConv3d(64, 64, 3, indice_key="subm1", dilation=2),
                 BatchNorm1d(64),
                 nn.ReLU(),
-                SubMConv3d(64, 64, 3, indice_key="subm1"),
+                SubMConv3d(64, 64, 3, indice_key="subm1", dilation=3),
                 BatchNorm1d(64),
                 nn.ReLU(),
                 SpConv3d(64, 64, 3, 2, padding=1), # [400, 350, 20] -> [200, 175, 10]
@@ -344,7 +343,10 @@ class RPNV2(nn.Module):
 def voxel_feature_extractor(features, num_voxels):
     # features: [concated_num_points, num_voxel_size, 3(4)]
     # num_voxels: [concated_num_points]
-    points_mean = features[:, :, 2:4].sum(dim=1, keepdim=False) / num_voxels.type_as(features).view(-1, 1)
+    if para.voxel_feature_len == 2:
+        points_mean = features[:, :, 2:4].sum(dim=1, keepdim=False) / num_voxels.type_as(features).view(-1, 1)
+    elif para.voxel_feature_len == 4:
+        points_mean = features[:, :, :4].sum(dim=1, keepdim=False) / num_voxels.type_as(features).view(-1, 1)
     return points_mean.contiguous()
 
 class PIXOR_SPARSE(nn.Module):
@@ -390,7 +392,7 @@ def _prepare_voxel(dev):
         max_num_points=30,
         max_voxels=40000
     )
-    points = np.random.rand(200, 4).astype(np.float32) * 50
+    points = np.random.rand(40000, 4).astype(np.float32) * 50
     # X,Y,Z  ->  Z,Y,X
     voxels, coords, num_points = voxel_generator.generate(points)
     coords_pad = np.pad(
