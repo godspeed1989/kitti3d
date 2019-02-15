@@ -472,7 +472,7 @@ class KITTI(Dataset):
                 labelmap_corners = point_transform(labelmap_corners, tx, ty, tz)
         if np.random.choice(2):
             # global scaling
-            factor = np.random.uniform(0.9, 1.1)
+            factor = np.random.uniform(0.95, 1.05)
             scan[:, 0:3] = scan[:, 0:3] * factor
             if num_target > 0:
                 all_corners = all_corners * factor

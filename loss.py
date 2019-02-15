@@ -30,7 +30,7 @@ def focal_loss(x, y, eps=1e-5):
     elif focal_loss_ver == 1:
         fl = (1-x_t)**gamma * (x_t+eps).log()
         loss_pos = -alpha_t * fl * y
-        loss_neg = (1-alpha_t) * fl * (1-y)
+        loss_neg = -(1-alpha_t) * fl * (1-y)
         loss = loss_pos.sum() / y.sum() + loss_neg.sum() / (1-y).sum()
 
         return loss
@@ -86,7 +86,7 @@ class CustomLoss(nn.Module):
 
         if focal_loss_ver == 0:
             cls_loss = cls_loss / (batch_size * image_size)
-        return cls_loss + loc_loss, loc_loss.data, cls_loss.data
+        return 1*cls_loss + 2*loc_loss, loc_loss.data, cls_loss.data
 
 #######################################################################################
 

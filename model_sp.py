@@ -150,46 +150,46 @@ class SpMiddleFHD(nn.Module):
             self.sparse_shape = np.array(dense_shape[1:4]) + [1, 0, 0]
             # input: # [1600, 1400, 41]
             self.middle_conv = spconv.SparseSequential(
-                SubMConv3d(para.voxel_feature_len, 16, 3, indice_key="subm0"),
+                SubMConv3d(para.voxel_feature_len, 16, 3, indice_key="subm0", dilation=1),
                 BatchNorm1d(16),
                 nn.ReLU(),
-                SubMConv3d(16, 16, 3, indice_key="subm0"),
+                SubMConv3d(16, 16, 3, indice_key="subm0", dilation=2),
                 BatchNorm1d(16),
                 nn.ReLU(),
                 SpConv3d(16, 32, 3, 2, padding=1), # [1600, 1400, 41] -> [800, 700, 21]
                 BatchNorm1d(32),
                 nn.ReLU(),
                 #
-                SubMConv3d(32, 32, 3, indice_key="subm1"),
+                SubMConv3d(32, 32, 3, indice_key="subm1", dilation=1),
                 BatchNorm1d(32),
                 nn.ReLU(),
-                SubMConv3d(32, 32, 3, indice_key="subm1"),
+                SubMConv3d(32, 32, 3, indice_key="subm1", dilation=2),
                 BatchNorm1d(32),
                 nn.ReLU(),
                 SpConv3d(32, 64, 3, 2, padding=1), # [800, 700, 21] -> [400, 350, 11]
                 BatchNorm1d(64),
                 nn.ReLU(),
                 #
-                SubMConv3d(64, 64, 3, indice_key="subm2"),
+                SubMConv3d(64, 64, 3, indice_key="subm2", dilation=1),
                 BatchNorm1d(64),
                 nn.ReLU(),
-                SubMConv3d(64, 64, 3, indice_key="subm2"),
+                SubMConv3d(64, 64, 3, indice_key="subm2", dilation=2),
                 BatchNorm1d(64),
                 nn.ReLU(),
-                SubMConv3d(64, 64, 3, indice_key="subm2"),
+                SubMConv3d(64, 64, 3, indice_key="subm2", dilation=3),
                 BatchNorm1d(64),
                 nn.ReLU(),
                 #
                 SpConv3d(64, 64, 3, 2, padding=[0, 1, 1]),  # [400, 350, 11] -> [200, 175, 5]
                 BatchNorm1d(64),
                 nn.ReLU(),
-                SubMConv3d(64, 64, 3, indice_key="subm3"),
+                SubMConv3d(64, 64, 3, indice_key="subm3", dilation=1),
                 BatchNorm1d(64),
                 nn.ReLU(),
-                SubMConv3d(64, 64, 3, indice_key="subm3"),
+                SubMConv3d(64, 64, 3, indice_key="subm3", dilation=2),
                 BatchNorm1d(64),
                 nn.ReLU(),
-                SubMConv3d(64, 64, 3, indice_key="subm3"),
+                SubMConv3d(64, 64, 3, indice_key="subm3", dilation=3),
                 BatchNorm1d(64),
                 nn.ReLU(),
                 SpConv3d(64, 64, (3, 1, 1), (2, 1, 1)),  # [200, 175, 5] -> [200, 175, 2]
