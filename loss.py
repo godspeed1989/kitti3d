@@ -4,11 +4,13 @@ import torch.nn.functional as F
 import ipdb
 import fire
 
+focal_loss_ver = 1
+
 def focal_loss(x, y, eps=1e-5):
     '''Focal loss.
     Args:
-        x: (tensor) sized [BatchSize, Height, Width].
-        y: (tensor) sized [BatchSize, Height, Width].
+        x: (tensor) sized [BatchSize, Height, Width]. predict
+        y: (tensor) sized [BatchSize, Height, Width]. target {0,1}
     Return:
         (tensor) focal loss.
     '''
@@ -21,9 +23,17 @@ def focal_loss(x, y, eps=1e-5):
     alpha_t = torch.ones_like(x_t) * alpha
     alpha_t = alpha_t * (2 * y - 1) + (1 - y)
 
-    loss = -alpha_t * (1-x_t)**gamma * (x_t+eps).log()
+    if focal_loss_ver == 0:
+        loss = -alpha_t * (1-x_t)**gamma * (x_t+eps).log()
 
-    return loss.sum()
+        return loss.sum()
+    elif focal_loss_ver == 1:
+        fl = (1-x_t)**gamma * (x_t+eps).log()
+        loss_pos = -alpha_t * fl * y
+        loss_neg = (1-alpha_t) * fl * (1-y)
+        loss = loss_pos.sum() / y.sum() + loss_neg.sum() / (1-y).sum()
+
+        return loss
 
 def cross_entropy(x, y):
     return F.binary_cross_entropy(input=x, target=y, reduction='sum')
@@ -74,7 +84,8 @@ class CustomLoss(nn.Module):
 
             loc_loss = loc_loss / (batch_size * image_size)# Pos item is summed over all batch
 
-        cls_loss = cls_loss / (batch_size * image_size)
+        if focal_loss_ver == 0:
+            cls_loss = cls_loss / (batch_size * image_size)
         return cls_loss + loc_loss, loc_loss.data, cls_loss.data
 
 #######################################################################################
