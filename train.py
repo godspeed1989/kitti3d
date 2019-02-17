@@ -42,7 +42,7 @@ def validate_batch(net, criterion, batch_size, val_data_loader, device):
         label_map = data['label_map']
         label_map = label_map.to(device)
         predictions = net(*net_input)
-        loss, loc_loss, cls_loss = criterion(predictions, label_map)
+        loss, loc_loss, cls_loss = criterion(predictions, label_map, data['label_map_mask'])
         val_loss += loss.data
         num_samples += label_map.shape[0]
     return val_loss * para.batch_size / num_samples
@@ -111,7 +111,7 @@ def train_net(config_name, device, val=False):
             # Forward
             predictions = net(*net_input)
             # ipdb.set_trace()
-            loss, loc_loss, cls_loss = criterion(predictions, label_map)
+            loss, loc_loss, cls_loss = criterion(predictions, label_map, data['label_map_mask'])
             print_log('%.5f loc %.5f cls %.5f' % (loss.data, loc_loss, cls_loss), False, pbar)
 
             loss.backward()
@@ -227,9 +227,11 @@ def eval_net(config_name, device):
     for image_id, data in enumerate(loader):
         net_input = _get_net_input(data, device, 1)
         # label_list [N,4,2]
-        index, boxes_3d_corners, labelmap_boxes3d_corners, calib_dict = loader.dataset.get_label(image_id)
+        index, boxes_3d_corners, labelmap_boxes3d_corners, labelmap_mask_boxes3d_corners, \
+            calib_dict = loader.dataset.get_label(image_id)
         print('---{}---'.format(index))
-        label_map_unnorm, label_list = loader.dataset.get_label_map(boxes_3d_corners, labelmap_boxes3d_corners)
+        _, label_list, _ = loader.dataset.get_label_map(boxes_3d_corners, \
+                labelmap_boxes3d_corners, labelmap_mask_boxes3d_corners)
         lines = eval_one_sample(net, net_input, config, label_list=label_list,
                                 vis=True, to_kitti_file=True, calib_dict=calib_dict)
         for l in lines:
@@ -250,7 +252,7 @@ def dump_net(config_name, device, db_selection):
         if db_selection == 'test':
             index, calib_dict = loader.dataset.get_label(image_id)
         else:
-            index, _, _, calib_dict = loader.dataset.get_label(image_id)
+            index, _, _, _, calib_dict = loader.dataset.get_label(image_id)
         lines = eval_one_sample(net, net_input, config, label_list=None,
                                 vis=False, to_kitti_file=True, calib_dict=calib_dict)
         txt_file = os.path.join(db_selection, index + '.txt')

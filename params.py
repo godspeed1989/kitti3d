@@ -76,7 +76,8 @@ if para.channel_type == 'sparse':
 
 para.object_list = ['Car']
 
-para.box_in_labelmap_ratio = 0.6
+para.box_in_labelmap_ratio = 0.5
+para.box_in_labelmap_mask_ratio = 1.2
 
 para.use_se_mod = False
 

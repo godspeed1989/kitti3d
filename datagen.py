@@ -91,9 +91,11 @@ class KITTI(Dataset):
         if self.selection == 'test':
             assert self.aug_data == False
             index, calib_dict = self.get_label(item)
-            raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners = None, None
+            raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, \
+                raw_labelmap_mask_boxes_3d_corners = None, None, None
         else:
-            index, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, calib_dict = self.get_label(item)
+            index, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, \
+                raw_labelmap_mask_boxes_3d_corners, calib_dict = self.get_label(item)
 
         if self.align_pc_with_img:
             raw_scan = self.align_img_and_pc(raw_scan, calib_dict)
@@ -102,11 +104,11 @@ class KITTI(Dataset):
             raw_scan = self.crop_pc_using_fov(raw_scan)
 
         if self.aug_data:
-            scan, boxes_3d_corners, labelmap_boxes_3d_corners = \
-                self.augment_data(raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners)
+            scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners = \
+                self.augment_data(raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, raw_labelmap_mask_boxes_3d_corners)
         else:
-            scan, boxes_3d_corners, labelmap_boxes_3d_corners = \
-                raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners
+            scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners = \
+                raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, raw_labelmap_mask_boxes_3d_corners
 
         if para.channel_type == 'rgb':
             ret['scan'] = self.lidar_preprocess_rgb(scan)
@@ -122,9 +124,11 @@ class KITTI(Dataset):
             ret['voxels_feature'], ret['coordinates'] = self.lidar_preprocess_sparse(scan)
 
         if self.selection != 'test':
-            label_map, _ = self.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners)
+            label_map, _, label_map_mask = self.get_label_map(boxes_3d_corners, \
+                labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners)
             self.reg_target_transform(label_map)
             ret['label_map'] = label_map
+            ret['label_map_mask'] = label_map_mask
 
         return ret
 
@@ -220,7 +224,7 @@ class KITTI(Dataset):
         print("There are {} images in txt file".format(len(names)))
         return names
 
-    def update_label_map(self, map, bev_corners, reg_target):
+    def update_label_map(self, map, bev_corners, map_mask, bev_corners_mask, reg_target):
         label_corners = bev_corners / para.grid_sizeLW / self.geometry['ratio']
         # y to positive
         # XY in LiDAR <--> YX in label map
@@ -252,6 +256,15 @@ class KITTI(Dataset):
             label_y = p[1]
             map[label_y, label_x, 0] = 1.0
             map[label_y, label_x, 1:1+para.box_code_len] = actual_reg_target
+        #
+        label_corners_mask = bev_corners_mask / para.grid_sizeLW / self.geometry['ratio']
+        label_corners_mask[:, 1] += self.geometry['label_shape'][0] / 2.0
+        points_mask = get_points_in_a_rotated_box(label_corners_mask)
+        for p in points_mask:
+            label_x = p[0]
+            label_y = p[1]
+            map_mask[label_y, label_x] = 0.0
+        map_mask += map[:,:,0]
 
     def get_label(self, idx):
         '''
@@ -275,6 +288,7 @@ class KITTI(Dataset):
         objs = read_label_obj(label_path)
         boxes3d_corners = []
         labelmap_boxes3d_corners = []
+        labelmap_mask_boxes3d_corners = []
         for obj in objs:
             if obj.type in para.object_list and obj_good_to_train(obj):
                 # use calibration to get accurate position (8, 3)
@@ -282,6 +296,7 @@ class KITTI(Dataset):
                     calib_dict['R0_rect'].reshape([3,3]),
                     calib_dict['Tr_velo_to_cam'].reshape([3,4]))
                 boxes3d_corners.append(box3d_corners)
+                #
                 bev_obj = deepcopy(obj)
                 bev_obj.w *= para.box_in_labelmap_ratio
                 bev_obj.l *= para.box_in_labelmap_ratio
@@ -290,11 +305,19 @@ class KITTI(Dataset):
                     calib_dict['R0_rect'].reshape([3,3]),
                     calib_dict['Tr_velo_to_cam'].reshape([3,4]))
                 labelmap_boxes3d_corners.append(labelmap_box3d_corners)
-        return index, boxes3d_corners, labelmap_boxes3d_corners, calib_dict
+                #
+                mask_obj = deepcopy(obj)
+                mask_obj.w *= para.box_in_labelmap_mask_ratio
+                mask_obj.l *= para.box_in_labelmap_mask_ratio
+                mask_obj.h *= para.box_in_labelmap_mask_ratio
+                labelmap_mask_box3d_corners = compute_lidar_box_3d(mask_obj,
+                    calib_dict['R0_rect'].reshape([3,3]),
+                    calib_dict['Tr_velo_to_cam'].reshape([3,4]))
+                labelmap_mask_boxes3d_corners.append(labelmap_mask_box3d_corners)
+        return index, boxes3d_corners, labelmap_boxes3d_corners, labelmap_mask_boxes3d_corners, calib_dict
 
-    def get_reg_targets(self, box3d_pts_3d, labelmap_box3d_pts_3d):
+    def get_reg_targets(self, box3d_pts_3d):
         bev_corners = box3d_pts_3d[:4, :2]
-        labelmap_bev_corners = labelmap_box3d_pts_3d[:4, :2]
         head = np.max(box3d_pts_3d[:, 2])
         bottom = np.min(box3d_pts_3d[:, 2])
         #
@@ -315,9 +338,9 @@ class KITTI(Dataset):
         else:
             raise NotImplementedError
 
-        return bev_corners, labelmap_bev_corners, reg_target
+        return bev_corners, reg_target
 
-    def get_label_map(self, boxes3d_corners, labelmap_boxes3d_corners):
+    def get_label_map(self, boxes3d_corners, labelmap_boxes3d_corners, labelmap_mask_boxes3d_corners):
         '''return
         label map: <--- This is the learning target
             a tensor of shape 800 * 700 * 7 representing the expected output
@@ -327,13 +350,18 @@ class KITTI(Dataset):
             is a car or one of the 'dontcare' (truck,van,etc) object
         '''
         label_map = np.zeros(self.geometry['label_shape'], dtype=np.float32)
+        label_map_mask = np.ones(para.label_shape, dtype=np.float32)
         label_list = []
-        for box3d_corners, labelmap_box3d_corners in zip(boxes3d_corners, labelmap_boxes3d_corners):
-            bev_corners, labelmap_bev_corners, reg_target = self.get_reg_targets(box3d_corners, labelmap_box3d_corners)
-            self.update_label_map(label_map, labelmap_bev_corners, reg_target)
+        for box3d_corners, labelmap_box3d_corners, labelmap_mask_box3d_corners in \
+                zip(boxes3d_corners, labelmap_boxes3d_corners, labelmap_mask_boxes3d_corners):
+            bev_corners, reg_target = self.get_reg_targets(box3d_corners)
+            labelmap_bev_corners = labelmap_box3d_corners[:4, :2]
+            labelmap_mask_bev_corners = labelmap_mask_box3d_corners[:4, :2]
+            self.update_label_map(label_map, labelmap_bev_corners,
+                label_map_mask, labelmap_mask_bev_corners, reg_target)
             label_list.append(bev_corners)
 
-        return label_map, label_list
+        return label_map, label_list, label_map_mask
 
     def load_velo_scan(self, item):
         """Helper method to parse velodyne binary files into a list of scans."""
@@ -416,15 +444,19 @@ class KITTI(Dataset):
         voxels_feature = voxels_feature / num_points_per_voxel.astype(voxels.dtype)[..., np.newaxis]
         return voxels_feature, coords
 
-    def augment_data(self, scan, boxes_3d_corners, labelmap_boxes_3d_corners):
+    def augment_data(self, scan, boxes_3d_corners,
+                     labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners):
         assert len(boxes_3d_corners) == len(labelmap_boxes_3d_corners)
+        assert len(boxes_3d_corners) == len(labelmap_mask_boxes_3d_corners)
         if len(boxes_3d_corners) > 0:
             # [(8,3),...,(8,3)] -> (N,8,3)
             all_corners = np.stack(boxes_3d_corners)
             labelmap_corners = np.stack(labelmap_boxes_3d_corners)
+            labelmap_mask_corners = np.stack(labelmap_mask_boxes_3d_corners)
         else:
             all_corners = np.zeros([0,8,3])
             labelmap_corners = np.zeros([0,8,3])
+            labelmap_mask_corners = np.zeros([0,8,3])
 
         if para.augment_data_use_db and all_corners.shape[0] > 0:
             collision_corners = np.concatenate([all_corners, fake_boxes_corners3d], axis=0)
@@ -439,6 +471,11 @@ class KITTI(Dataset):
                 labelmap_sampled_boxes_centers3d[:, 3:6] *= para.box_in_labelmap_ratio
                 labelmap_sampled_boxes_corners3d = lidar_center_to_corner_box3d(labelmap_sampled_boxes_centers3d)
                 labelmap_corners = np.concatenate([labelmap_corners, labelmap_sampled_boxes_corners3d], axis=0)
+                # labelmap mask
+                labelmap_mask_sampled_boxes_centers3d = sampled_boxes_centers3d.copy()
+                labelmap_mask_sampled_boxes_centers3d[:, 3:6] *= para.box_in_labelmap_mask_ratio
+                labelmap_mask_sampled_boxes_corners3d = lidar_center_to_corner_box3d(labelmap_mask_sampled_boxes_centers3d)
+                labelmap_mask_corners = np.concatenate([labelmap_mask_corners, labelmap_mask_sampled_boxes_corners3d], axis=0)
                 # remove
                 if para.remove_points_after_sample:
                     boxes_corners3d = sampled_boxes_corners3d.copy()
@@ -453,6 +490,7 @@ class KITTI(Dataset):
         # (N,8,3) -> (N*8,3)
         all_corners = np.reshape(all_corners, [num_target*8, 3])
         labelmap_corners = np.reshape(labelmap_corners, [num_target*8, 3])
+        labelmap_mask_corners = np.reshape(labelmap_mask_corners, [num_target*8, 3])
 
         if np.random.choice(2):
             # global rotation
@@ -461,6 +499,7 @@ class KITTI(Dataset):
             if num_target > 0:
                 all_corners = point_transform(all_corners, 0, 0, 0, rz=angle)
                 labelmap_corners = point_transform(labelmap_corners, 0, 0, 0, rz=angle)
+                labelmap_mask_corners = point_transform(labelmap_mask_corners, 0, 0, 0, rz=angle)
         if np.random.choice(2):
             # global translation
             tx = np.random.uniform(-1, 1)
@@ -470,6 +509,7 @@ class KITTI(Dataset):
             if num_target > 0:
                 all_corners = point_transform(all_corners, tx, ty, tz)
                 labelmap_corners = point_transform(labelmap_corners, tx, ty, tz)
+                labelmap_mask_corners = point_transform(labelmap_mask_corners, tx, ty, tz)
         if np.random.choice(2):
             # global scaling
             factor = np.random.uniform(0.95, 1.05)
@@ -477,13 +517,16 @@ class KITTI(Dataset):
             if num_target > 0:
                 all_corners = all_corners * factor
                 labelmap_corners = labelmap_corners * factor
+                labelmap_mask_corners = labelmap_mask_corners * factor
 
         ret_boxes_3d_corners = []
         ret_labelmap_boxes_3d_corners = []
+        ret_labelmap_mask_boxes_3d_corners = []
         for i in range(num_target):
             ret_boxes_3d_corners.append(all_corners[i*8 : (i+1)*8])
             ret_labelmap_boxes_3d_corners.append(labelmap_corners[i*8 : (i+1)*8])
-        return scan, ret_boxes_3d_corners, ret_labelmap_boxes_3d_corners
+            ret_labelmap_mask_boxes_3d_corners.append(labelmap_mask_corners[i*8 : (i+1)*8])
+        return scan, ret_boxes_3d_corners, ret_labelmap_boxes_3d_corners, ret_labelmap_mask_boxes_3d_corners
 
 def _worker_init_fn(worker_id):
     time_seed = np.array(time.time(), dtype=np.int32)
@@ -542,27 +585,33 @@ def test0():
         k.load_velo()
         tstart = time.time()
         scan = k.load_velo_scan(id)
-        _, boxes_3d_corners, labelmap_boxes_3d_corners, calib_dict = k.get_label(id)
+        _, boxes_3d_corners, labelmap_boxes_3d_corners, \
+            labelmap_mask_boxes_3d_corners, calib_dict = k.get_label(id)
         if k.align_pc_with_img:
             scan = k.align_img_and_pc(scan, calib_dict)
         if k.crop_pc_by_fov:
             scan = k.crop_pc_using_fov(scan)
-        scan, boxes_3d_corners, labelmap_boxes_3d_corners = k.augment_data(scan, boxes_3d_corners, labelmap_boxes_3d_corners)
+        scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners = \
+            k.augment_data(scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners)
         processed_v = k.lidar_preprocess(scan)
-        label_map, label_list = k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners)
+        label_map, label_list, label_map_mask = \
+            k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners)
         RGB_Map = k.lidar_preprocess_rgb(scan)
         print('time taken: %gs' %(time.time()-tstart))
         plot_bev(processed_v, label_list=label_list)
         plot_label_map(RGB_Map)
         plot_label_map(label_map[:, :, :3])
+        plot_label_map(label_map_mask)
 
 def find_reg_target_var_and_mean():
     k = KITTI(selection='trainval')
     k.load_velo()
     reg_targets = [[] for _ in range(para.box_code_len)]
     for i in range(len(k)):
-        _, boxes_3d_corners, labelmap_boxes_3d_corners, _ = k.get_label(i)
-        label_map, _ = k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners)
+        _, boxes_3d_corners, labelmap_boxes_3d_corners, \
+            labelmap_mask_boxes_3d_corners, _ = k.get_label(i)
+        label_map, _, _ = k.get_label_map(boxes_3d_corners, \
+            labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners)
         car_locs = np.where(label_map[:, :, 0] == 1)
         for j in range(1, 1+para.box_code_len):
             map = label_map[:, :, j]
@@ -591,7 +640,9 @@ def test():
             print('Voxel Feature Shape', voxels_feature.shape)
             print('Coords_pad Shape', coords_pad.shape)
         label_map = data['label_map']
+        label_map_mask = data['label_map_mask']
         print("Label Map shape", label_map.shape)
+        print("Label Map Mask shape", label_map_mask.shape)
         if i == 5:
             break
 

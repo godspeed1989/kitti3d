@@ -4,9 +4,9 @@ import torch.nn.functional as F
 import ipdb
 import fire
 
-focal_loss_ver = 1
+focal_loss_ver = 0
 
-def focal_loss(x, y, eps=1e-5):
+def focal_loss(x, y, mask, eps=1e-5):
     '''Focal loss.
     Args:
         x: (tensor) sized [BatchSize, Height, Width]. predict
@@ -24,11 +24,11 @@ def focal_loss(x, y, eps=1e-5):
     alpha_t = alpha_t * (2 * y - 1) + (1 - y)
 
     if focal_loss_ver == 0:
-        loss = -alpha_t * (1-x_t)**gamma * (x_t+eps).log()
+        loss = -alpha_t * (1-x_t)**gamma * (x_t+eps).log() * mask
 
         return loss.sum()
     elif focal_loss_ver == 1:
-        fl = (1-x_t)**gamma * (x_t+eps).log()
+        fl = (1-x_t)**gamma * (x_t+eps).log() * mask
         loss_pos = -alpha_t * fl * y
         loss_neg = -(1-alpha_t) * fl * (1-y)
         loss = loss_pos.sum() / y.sum() + loss_neg.sum() / (1-y).sum()
@@ -44,7 +44,7 @@ class CustomLoss(nn.Module):
         self.num_classes = num_classes
         self.device = device
 
-    def forward(self, preds, targets):
+    def forward(self, preds, targets, mask=None):
         '''Compute loss between (loc_preds, loc_targets) and (cls_preds, cls_targets).
         Args:
           preds: (tensor)  cls_preds + reg_preds, sized[batch_size, height, width, 7]
@@ -64,8 +64,11 @@ class CustomLoss(nn.Module):
         cls_targets = targets[..., 0]
         loc_targets = targets[..., 1:]
 
+        if mask is None:
+            mask = torch.ones([targets.size(0), targets.size(1), targets.size(2)], dtype=preds.dtype)
+
         ################################################################
-        cls_loss = focal_loss(cls_preds, cls_targets)
+        cls_loss = focal_loss(cls_preds, cls_targets, mask)
         ################################################################
         # cls_loss = cross_entropy(cls_preds, cls_targets)
 
@@ -86,7 +89,9 @@ class CustomLoss(nn.Module):
 
         if focal_loss_ver == 0:
             cls_loss = cls_loss / (batch_size * image_size)
-        return 1*cls_loss + 2*loc_loss, loc_loss.data, cls_loss.data
+        alpha = 1.0
+        beta = 1.0
+        return alpha*cls_loss + beta*loc_loss, loc_loss.data, cls_loss.data
 
 #######################################################################################
 
@@ -359,7 +364,8 @@ def test():
     loss = CustomLoss(device="cpu")
     pred = torch.sigmoid(torch.randn(1, 2, 2, 3))
     label = torch.tensor([[[[1, 0.4, 0.5], [0, 0.2, 0.5]], [[0, 0.1, 0.1], [1, 0.8, 0.4]]]])
-    loss = loss(pred, label)
+    mask = torch.ones([1, 2, 2])
+    loss = loss(pred, label, mask)
     print(loss)
 
 def test_CustomLoss_ovo():
