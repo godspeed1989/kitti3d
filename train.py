@@ -39,10 +39,10 @@ def validate_batch(net, criterion, batch_size, val_data_loader, device):
     num_samples = 0
     for i, data in enumerate(val_data_loader):
         net_input = _get_net_input(data, device, data['cur_batch_size'])
-        label_map = data['label_map']
-        label_map = label_map.to(device)
+        label_map = data['label_map'].to(device)
+        label_map_mask = data['label_map_mask'].to(device)
         predictions = net(*net_input)
-        loss, loc_loss, cls_loss = criterion(predictions, label_map, data['label_map_mask'])
+        loss, loc_loss, cls_loss = criterion(predictions, label_map, label_map_mask)
         val_loss += loss.data
         num_samples += label_map.shape[0]
     return val_loss * para.batch_size / num_samples
@@ -105,13 +105,13 @@ def train_net(config_name, device, val=False):
         pbar = tqdm(total=len(train_data_loader), initial=0, desc='train')
         for i, data in enumerate(train_data_loader):
             net_input = _get_net_input(data, device, data['cur_batch_size'])
-            label_map = data['label_map']
-            label_map = label_map.to(device)
+            label_map = data['label_map'].to(device)
+            label_map_mask = data['label_map_mask'].to(device)
             optimizer.zero_grad()
             # Forward
             predictions = net(*net_input)
             # ipdb.set_trace()
-            loss, loc_loss, cls_loss = criterion(predictions, label_map, data['label_map_mask'])
+            loss, loc_loss, cls_loss = criterion(predictions, label_map, label_map_mask)
             print_log('%.5f loc %.5f cls %.5f' % (loss.data, loc_loss, cls_loss), False, pbar)
 
             loss.backward()
