@@ -40,7 +40,10 @@ def validate_batch(net, criterion, batch_size, val_data_loader, device):
     for i, data in enumerate(val_data_loader):
         net_input = _get_net_input(data, device, data['cur_batch_size'])
         label_map = data['label_map'].to(device)
-        label_map_mask = data['label_map_mask'].to(device)
+        if para.use_labelmap_mask:
+            label_map_mask = data['label_map_mask'].to(device)
+        else:
+            label_map_mask = None
         predictions = net(*net_input)
         loss, loc_loss, cls_loss = criterion(predictions, label_map, label_map_mask)
         val_loss += loss.data
@@ -106,7 +109,10 @@ def train_net(config_name, device, val=False):
         for i, data in enumerate(train_data_loader):
             net_input = _get_net_input(data, device, data['cur_batch_size'])
             label_map = data['label_map'].to(device)
-            label_map_mask = data['label_map_mask'].to(device)
+            if para.use_labelmap_mask:
+                label_map_mask = data['label_map_mask'].to(device)
+            else:
+                label_map_mask = None
             optimizer.zero_grad()
             # Forward
             predictions = net(*net_input)

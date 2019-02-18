@@ -10,10 +10,14 @@ if para.box_code_len == 6:
     para.target_mean = np.array([0.022, -0.006,  0.194,  0.192,  0.487,  1.37], dtype=np.float32)
     para.target_std_dev = np.array([1.0, 1.0, 0.537, 0.389, 0.064, 0.109], dtype=np.float32)
 elif para.box_code_len == 5:
-    para.target_mean = np.array([0.262, 0.194, 0.192, 0.487, 1.37 ], dtype=np.float32)
+    para.target_mean = np.array([0.0, 0.194, 0.192, 0.487, 1.37 ], dtype=np.float32)
     para.target_std_dev = np.array([1.0, 0.537, 0.389, 0.064, 0.109], dtype=np.float32)
 else:
     raise NotImplementedError
+
+para.sin_angle_loss = False
+if para.box_code_len == 5:
+    para.sin_angle_loss = True
 
 para.estimate_bh = True
 if para.estimate_bh:
@@ -76,8 +80,9 @@ if para.channel_type == 'sparse':
 
 para.object_list = ['Car']
 
-para.box_in_labelmap_ratio = 0.5
+para.box_in_labelmap_ratio = 0.6
 para.box_in_labelmap_mask_ratio = 1.2
+para.use_labelmap_mask = False
 
 para.use_se_mod = False
 

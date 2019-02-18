@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import ipdb
 import fire
+from params import para
 
 focal_loss_ver = 0
 
@@ -38,6 +39,13 @@ def focal_loss(x, y, mask, eps=1e-5):
 def cross_entropy(x, y):
     return F.binary_cross_entropy(input=x, target=y, reduction='sum')
 
+def smoothL1(x):
+    # type: (Tensor, Tensor) -> Tensor
+    with torch.no_grad():
+        t = torch.abs(x)
+        t = torch.where(t < 1, 0.5 * t ** 2, t - 0.5)
+    return t
+
 class CustomLoss(nn.Module):
     def __init__(self, device, num_classes=1):
         super(CustomLoss, self).__init__()
@@ -65,7 +73,7 @@ class CustomLoss(nn.Module):
         loc_targets = targets[..., 1:]
 
         if mask is None:
-            mask = torch.ones([targets.size(0), targets.size(1), targets.size(2)], dtype=preds.dtype)
+            mask = torch.tensor(1.0, dtype=preds.dtype).to(self.device)
 
         ################################################################
         cls_loss = focal_loss(cls_preds, cls_targets, mask)
@@ -81,11 +89,20 @@ class CustomLoss(nn.Module):
         loc_loss = torch.tensor(0.0).to(self.device)
         pos_items = cls_targets.nonzero().size(0)
         if pos_items != 0:
-            for i in range(loc_targets.shape[-1]):
+            for i in range(1, loc_targets.shape[-1]):
                 loc_preds_filtered = cls_targets * loc_preds[..., i].float()
                 loc_loss += F.smooth_l1_loss(loc_preds_filtered, loc_targets[..., i], reduction='sum')
-
+            # use smoothL1(sin(A_t-A_p))
+            loc_preds_filtered_a = cls_targets * loc_preds[..., 0].float()
+            if para.sin_angle_loss:
+                angle_loss = torch.sin(loc_preds_filtered_a - loc_targets[..., 0])
+                angle_loss = smoothL1(angle_loss).sum()
+            else:
+                angle_loss = F.smooth_l1_loss(loc_preds_filtered_a, loc_targets[..., 0], reduction='sum')
+            #
             loc_loss = loc_loss / (batch_size * image_size)# Pos item is summed over all batch
+            angle_loss = angle_loss / (batch_size * image_size)
+            loc_loss += angle_loss
 
         if focal_loss_ver == 0:
             cls_loss = cls_loss / (batch_size * image_size)

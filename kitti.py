@@ -248,8 +248,8 @@ def angle_in_limit(angle):
         angle -= np.pi
     while angle < -np.pi / 2:
         angle += np.pi
-    if abs(angle + np.pi / 2) < limit_degree / 180 * np.pi:
-        angle = np.pi / 2
+    # if abs(angle + np.pi / 2) < limit_degree / 180 * np.pi:
+    #     angle = np.pi / 2
     return angle
 
 def lidar_to_camera_box3d(boxes, T_VELO_2_CAM, R_RECT_0):
