@@ -5,7 +5,7 @@ para = EasyDict()
 
 # 6: cos, sin, x, y, w, l
 # 5: r, x, y, w, l
-para.box_code_len = 6
+para.box_code_len = 5
 if para.box_code_len == 6:
     para.target_mean = np.array([0.022, -0.006,  0.194,  0.192,  0.487,  1.37], dtype=np.float32)
     para.target_std_dev = np.array([1.0, 1.0, 0.537, 0.389, 0.064, 0.109], dtype=np.float32)
@@ -15,17 +15,18 @@ elif para.box_code_len == 5:
 else:
     raise NotImplementedError
 
-para.sin_angle_loss = False
-if para.box_code_len == 5:
-    para.sin_angle_loss = True
+para.sin_angle_loss = True
+if para.sin_angle_loss:
+    assert para.box_code_len == 5
 
 para.estimate_bh = True
 if para.estimate_bh:
     para.box_code_len += 2 # 8, 7
     para.target_mean = np.resize(para.target_mean, para.box_code_len)
     para.target_std_dev = np.resize(para.target_std_dev, para.box_code_len)
-    para.target_mean[-2:] = np.array([-1.532, 0.052], dtype=np.float32)
-    para.target_std_dev[-2:] = np.array([0.34, 0.373], dtype=np.float32)
+    para.height_bias = 5
+    para.target_mean[-2:] = np.array([1.239, 1.617], dtype=np.float32)
+    para.target_std_dev[-2:] = np.array([0.096, 0.072], dtype=np.float32)
 
 para.L1 = -40.0
 para.L2 = 40.0

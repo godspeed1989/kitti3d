@@ -45,6 +45,8 @@ class Decoder(nn.Module):
         elif para.box_code_len == 7:
             theta, dx, dy, log_w, log_l, log_bottom, log_head = torch.chunk(x, 7, dim=1)
 
+        if para.sin_angle_loss:
+            theta = torch.asin(theta)
         cos_t = torch.cos(theta)
         sin_t = torch.sin(theta)
 
@@ -71,6 +73,8 @@ class Decoder(nn.Module):
                                  front_right_x, front_right_y, front_left_x, front_left_y], dim=1)
 
         if para.estimate_bh:
+            log_bottom = log_bottom.exp() - para.height_bias
+            log_head = log_head.exp() - para.height_bias
             return decoded_reg, torch.cat([log_bottom, log_head], dim=1)
         else:
             return decoded_reg
@@ -99,7 +103,11 @@ class Header(nn.Module):
         self.bn4 = nn.BatchNorm2d(96)
 
         self.clshead = conv3x3(96, 1, bias=True)
-        self.reghead = conv3x3(96, para.box_code_len, bias=True)
+        if para.sin_angle_loss:
+            self.anglehead = conv3x3(96, 1, bias=True)
+            self.reghead = conv3x3(96, para.box_code_len-1, bias=True)
+        else:
+            self.reghead = conv3x3(96, para.box_code_len, bias=True)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -117,5 +125,8 @@ class Header(nn.Module):
 
         cls = torch.sigmoid(self.clshead(x))
         reg = self.reghead(x)
+        if para.sin_angle_loss:
+            angle = torch.tanh(self.anglehead(x))
+            reg = torch.cat([angle, reg], dim=1)
 
         return cls, reg

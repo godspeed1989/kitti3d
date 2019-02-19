@@ -247,10 +247,13 @@ class KITTI(Dataset):
                 actual_reg_target[2] = reg_target[2] - metric_y
                 actual_reg_target[3] = np.log(reg_target[3])
                 actual_reg_target[4] = np.log(reg_target[4])
+                if para.sin_angle_loss:
+                    actual_reg_target[0] = np.sin(reg_target[0])
             else:
                 raise NotImplementedError
             if para.estimate_bh:
-                actual_reg_target[-2:] = reg_target[-2:]
+                actual_reg_target[-2] = np.log(reg_target[-2] + para.height_bias)
+                actual_reg_target[-1] = np.log(reg_target[-1] + para.height_bias)
 
             label_x = p[0]
             label_y = p[1]
