@@ -224,7 +224,7 @@ class KITTI(Dataset):
         print("There are {} images in txt file".format(len(names)))
         return names
 
-    def update_label_map(self, map, bev_corners, map_mask, bev_corners_mask, reg_target):
+    def update_label_map(self, labelmap, bev_corners, map_mask, bev_corners_mask, reg_target):
         label_corners = bev_corners / para.grid_sizeLW / self.geometry['ratio']
         # y to positive
         # XY in LiDAR <--> YX in label map
@@ -257,8 +257,8 @@ class KITTI(Dataset):
 
             label_x = p[0]
             label_y = p[1]
-            map[label_y, label_x, 0] = 1.0
-            map[label_y, label_x, 1:1+para.box_code_len] = actual_reg_target
+            labelmap[label_y, label_x, 0] = 1.0
+            labelmap[label_y, label_x, 1:1+para.box_code_len] = actual_reg_target
         #
         label_corners_mask = bev_corners_mask / para.grid_sizeLW / self.geometry['ratio']
         label_corners_mask[:, 1] += self.geometry['label_shape'][0] / 2.0
@@ -266,8 +266,7 @@ class KITTI(Dataset):
         for p in points_mask:
             label_x = p[0]
             label_y = p[1]
-            map_mask[label_y, label_x] = 0.0
-        map_mask += map[:,:,0]
+            map_mask[label_y, label_x] = 0.5
 
     def get_label(self, idx):
         '''
@@ -363,6 +362,7 @@ class KITTI(Dataset):
             self.update_label_map(label_map, labelmap_bev_corners,
                 label_map_mask, labelmap_mask_bev_corners, reg_target)
             label_list.append(bev_corners)
+        label_map_mask = label_map_mask + label_map[:,:,0] * 0.5
 
         return label_map, label_list, label_map_mask
 
