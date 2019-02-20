@@ -46,6 +46,7 @@ class Decoder(nn.Module):
             theta, dx, dy, log_w, log_l, log_bottom, log_head = torch.chunk(x, 7, dim=1)
 
         if para.sin_angle_loss:
+            theta = torch.clamp(theta, -1, 1)
             theta = torch.asin(theta)
         cos_t = torch.cos(theta)
         sin_t = torch.sin(theta)
@@ -108,11 +109,7 @@ class Header(nn.Module):
             channels = input_channels
 
         self.clshead = conv3x3(channels, 1, bias=True)
-        if para.sin_angle_loss:
-            self.anglehead = conv3x3(channels, 1, bias=True)
-            self.reghead = conv3x3(channels, para.box_code_len-1, bias=True)
-        else:
-            self.reghead = conv3x3(channels, para.box_code_len, bias=True)
+        self.reghead = conv3x3(channels, para.box_code_len, bias=True)
 
     def forward(self, x):
         if self.aggr_feat:
@@ -131,8 +128,5 @@ class Header(nn.Module):
 
         cls = torch.sigmoid(self.clshead(x))
         reg = self.reghead(x)
-        if para.sin_angle_loss:
-            angle = torch.tanh(self.anglehead(x))
-            reg = torch.cat([angle, reg], dim=1)
 
         return cls, reg
