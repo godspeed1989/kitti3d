@@ -521,6 +521,17 @@ class KITTI(Dataset):
                 all_corners = all_corners * factor
                 labelmap_corners = labelmap_corners * factor
                 labelmap_mask_corners = labelmap_mask_corners * factor
+        if np.random.choice(2):
+            # XY flip
+            scan[:, 0] = self.geometry['W2'] - scan[:, 0] + self.geometry['W1']
+            scan[:, 1] = self.geometry['H2'] - scan[:, 1] + self.geometry['H1']
+            if num_target > 0:
+                all_corners[:,0] = self.geometry['W2'] - all_corners[:,0] + self.geometry['W1']
+                labelmap_corners[:,0] = self.geometry['W2'] - labelmap_corners[:,0] + self.geometry['W1']
+                labelmap_mask_corners[:,0] = self.geometry['W2'] - labelmap_mask_corners[:,0] + self.geometry['W1']
+                all_corners[:,1] = self.geometry['H2'] - all_corners[:,1] + self.geometry['H1']
+                labelmap_corners[:,1] = self.geometry['H2'] - labelmap_corners[:,1] + self.geometry['H1']
+                labelmap_mask_corners[:,1] = self.geometry['H2'] - labelmap_mask_corners[:,1] + self.geometry['H1']
 
         ret_boxes_3d_corners = []
         ret_labelmap_boxes_3d_corners = []
@@ -596,13 +607,11 @@ def test0():
             scan = k.crop_pc_using_fov(scan)
         scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners = \
             k.augment_data(scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners)
-        processed_v = k.lidar_preprocess(scan)
         label_map, label_list, label_map_mask = \
             k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners)
         RGB_Map = k.lidar_preprocess_rgb(scan)
         print('time taken: %gs' %(time.time()-tstart))
-        plot_bev(processed_v, label_list=label_list)
-        plot_label_map(RGB_Map)
+        plot_bev(RGB_Map, label_list=label_list)
         plot_label_map(label_map[:, :, :3])
         plot_label_map(label_map_mask)
 
