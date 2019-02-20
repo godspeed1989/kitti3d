@@ -19,7 +19,7 @@ para.sin_angle_loss = False
 if para.sin_angle_loss:
     assert para.box_code_len == 5
 
-para.estimate_bh = True
+para.estimate_bh = False
 if para.estimate_bh:
     para.box_code_len += 2 # 8, 7
     para.target_mean = np.resize(para.target_mean, para.box_code_len)
