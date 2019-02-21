@@ -1,3 +1,4 @@
+import abc
 import copy
 import pathlib
 import pickle
@@ -208,6 +209,43 @@ def center_to_corner_box2d(centers, dims, angles=None, origin=0.5):
     corners += centers.reshape([-1, 1, 2])
     return corners
 
+class DataBasePreprocessing:
+    def __call__(self, db_infos):
+        return self._preprocess(db_infos)
+
+    @abc.abstractclassmethod
+    def _preprocess(self, db_infos):
+        pass
+
+class DBFilterByDifficulty(DataBasePreprocessing):
+    def __init__(self, removed_difficulties=[-1]):
+        self._removed_difficulties = removed_difficulties
+        print(removed_difficulties)
+
+    def _preprocess(self, db_infos):
+        new_db_infos = {}
+        for key, dinfos in db_infos.items():
+            new_db_infos[key] = [
+                info for info in dinfos
+                if info["difficulty"] not in self._removed_difficulties
+            ]
+        return new_db_infos
+
+class DBFilterByMinNumPoint(DataBasePreprocessing):
+    def __init__(self, min_gt_point_dict={"Car": 5}):
+        self._min_gt_point_dict = min_gt_point_dict
+        print(min_gt_point_dict)
+
+    def _preprocess(self, db_infos):
+        for name, min_num in self._min_gt_point_dict.items():
+            if min_num > 0:
+                filtered_infos = []
+                for info in db_infos[name]:
+                    if info["num_points_in_gt"] >= min_num:
+                        filtered_infos.append(info)
+                db_infos[name] = filtered_infos
+        return db_infos
+
 class DataBaseSampler:
     def __init__(self, root_path, info_path, num_point_features=4):
         self.root_path = root_path
@@ -215,23 +253,21 @@ class DataBaseSampler:
         #
         with open(info_path, 'rb') as f:
             db_infos = pickle.load(f)
+        #
+        prepors = [DBFilterByDifficulty(), DBFilterByMinNumPoint()]
+        for prepor in prepors:
+            db_infos = prepor(db_infos)
+        #
         self._sampler_dict = {}
         for k, v in db_infos.items():
             self._sampler_dict[k] = BatchSampler(v, k)
-        #
 
     def print_class_name(self):
         print(self._sampler_dict.keys())
 
     def sample_n_obj(self, class_name, sampled_num):
-        samples = []
-        while len(samples) < sampled_num:
-            all_samples = self._sampler_dict[class_name].sample(sampled_num)
-            for s in all_samples:
-                #if s['difficulty'] <= 1 and s['num_points_in_gt'] > 66:
-                if s['num_points_in_gt'] > 10:
-                    samples.append(s)
-        samples = copy.deepcopy(samples)
+        all_samples = self._sampler_dict[class_name].sample(sampled_num)
+        samples = copy.deepcopy(all_samples)
         return samples
 
     def load_sample_points(self, all_samples):
@@ -242,6 +278,8 @@ class DataBaseSampler:
                 str(pathlib.Path(self.root_path) / info["path"]),
                 dtype=np.float32)
             s_points = s_points.reshape([-1, self.num_point_features])
+            if "rot_transform" in info:
+                assert 0
             # print(s_points.shape, info["num_points_in_gt"])
             s_points[:, :3] += info["box3d_lidar"][:3]
             s_points_list.append(s_points)
@@ -319,7 +357,7 @@ if __name__ == '__main__':
     sampler = DataBaseSampler(root_path, database_info_path)
     sampler.print_class_name()
     # test1
-    samples = sampler.sample_n_obj('Car', 15)
+    samples = sampler.sample_n_obj('Car', 11)
     # test2
     samples_points = sampler.load_sample_points(samples)
     # test3

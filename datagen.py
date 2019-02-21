@@ -462,7 +462,8 @@ class KITTI(Dataset):
             labelmap_mask_corners = np.zeros([0,8,3])
 
         if para.augment_data_use_db and all_corners.shape[0] > 0:
-            collision_corners = np.concatenate([all_corners, fake_boxes_corners3d], axis=0)
+            #collision_corners = np.concatenate([all_corners, fake_boxes_corners3d], axis=0)
+            collision_corners = all_corners
             sampled = self.sampler.sample_all('Car', collision_corners, para.augment_max_samples)
             if sampled is not None:
                 sampled_boxes_centers3d = sampled["boxes_centers3d"]
