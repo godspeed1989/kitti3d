@@ -336,9 +336,9 @@ class DataBaseSampler:
 
             s_points_list = self.load_sample_points(sampled_cls)
             ret = {
-                "names": np.array([s["name"] for s in sampled_cls]),
+                "names": [s["name"] for s in sampled_cls],
                 "boxes_centers3d": sampled_gt_boxes,
-                "points": np.concatenate(s_points_list, axis=0),
+                "points": s_points_list,
             }
         else:
             ret = None

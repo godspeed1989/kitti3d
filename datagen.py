@@ -2,6 +2,7 @@
 Load pointcloud/labels from the KITTI dataset folder
 '''
 import os.path
+import cv2
 import fire
 import numpy as np
 import time
@@ -105,7 +106,7 @@ class KITTI(Dataset):
 
         if self.aug_data:
             scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners = \
-                self.augment_data(raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, raw_labelmap_mask_boxes_3d_corners)
+                self.augment_data(index, raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, raw_labelmap_mask_boxes_3d_corners)
         else:
             scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners = \
                 raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, raw_labelmap_mask_boxes_3d_corners
@@ -447,7 +448,7 @@ class KITTI(Dataset):
         voxels_feature = voxels_feature / num_points_per_voxel.astype(voxels.dtype)[..., np.newaxis]
         return voxels_feature, coords
 
-    def augment_data(self, scan, boxes_3d_corners,
+    def augment_data(self, index, scan, boxes_3d_corners,
                      labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners):
         assert len(boxes_3d_corners) == len(labelmap_boxes_3d_corners)
         assert len(boxes_3d_corners) == len(labelmap_mask_boxes_3d_corners)
@@ -461,10 +462,68 @@ class KITTI(Dataset):
             labelmap_corners = np.zeros([0,8,3])
             labelmap_mask_corners = np.zeros([0,8,3])
 
-        if para.augment_data_use_db and all_corners.shape[0] > 0:
-            #collision_corners = np.concatenate([all_corners, fake_boxes_corners3d], axis=0)
+        if para.augment_data_use_db:
             collision_corners = all_corners
             sampled = self.sampler.sample_all('Car', collision_corners, para.augment_max_samples)
+            # ----
+            def filter_by_ground(sampled, index):
+                if sampled is None:
+                    return None
+                centers3d = sampled["boxes_centers3d"]
+                corners2d = lidar_center_to_corner_box3d(centers3d)[:,:4,:2]
+                def line_to_poly(line):
+                    ret = []
+                    for s in line.split(' '):
+                        if s.isnumeric():
+                            ret.append(int(s))
+                    ret = np.array(ret, dtype=np.int32)
+                    return np.reshape(ret, [-1, 2])
+                def load_anno(idx):
+                    ANNO_DST = os.path.join(KITTI_PATH, 'training/grd_mask')
+                    filename = os.path.join(ANNO_DST, index+'.txt')
+                    ret = []
+                    if os.path.exists(filename):
+                        with open(filename, 'r') as f:
+                            lines = f.readlines()
+                            for l in lines:
+                                pl = line_to_poly(l)
+                                ret.append(pl)
+                            f.close()
+                    return ret
+                grd_poly = load_anno(index)
+                if len(grd_poly) < 1:
+                    return None
+                mask = np.zeros(self.geometry['input_shape'][:2], np.uint8)
+                cv2.fillPoly(mask, grd_poly, 255)
+                #
+                names = []
+                gt_boxes = []
+                points_list = []
+                for i in range(corners2d.shape[0]):
+                    cnt = 0
+                    for j in range(4):
+                        x = int((corners2d[i,j,1]-self.geometry['L1']) / para.grid_sizeLW)
+                        y = int((corners2d[i,j,0]-self.geometry['W1']) / para.grid_sizeLW)
+                        if not(x>=0 and x<self.geometry['input_shape'][0] and \
+                                y>=0 and y<self.geometry['input_shape'][1]):
+                            break
+                        if mask[x,y] < 1:
+                            break
+                        cnt += 1
+                    if cnt == 4:
+                        names.append(sampled['names'][i])
+                        gt_boxes.append(sampled['boxes_centers3d'][i])
+                        points_list.append(sampled['points'][i])
+                if len(names) > 0:
+                    return {
+                        "names": names,
+                        "boxes_centers3d": np.stack(gt_boxes, axis=0),
+                        "points": points_list,
+                    }
+                else:
+                    return None
+            # ----
+            sampled = filter_by_ground(sampled, index)
             if sampled is not None:
                 sampled_boxes_centers3d = sampled["boxes_centers3d"]
                 # gt
@@ -488,7 +547,7 @@ class KITTI(Dataset):
                     boxes_corners3d[:,:4,2] = -10
                     boxes_corners3d[:,4:,2] = 10
                     scan, _ = remove_points_in_boxes(scan, boxes_corners3d)
-                scan = np.vstack([scan, sampled["points"]])
+                scan = np.vstack([scan, np.concatenate(sampled["points"],axis=0)])
 
         num_target = all_corners.shape[0]
         # (N,8,3) -> (N*8,3)
@@ -600,14 +659,14 @@ def test0():
         k.load_velo()
         tstart = time.time()
         scan = k.load_velo_scan(id)
-        _, boxes_3d_corners, labelmap_boxes_3d_corners, \
+        index, boxes_3d_corners, labelmap_boxes_3d_corners, \
             labelmap_mask_boxes_3d_corners, calib_dict = k.get_label(id)
         if k.align_pc_with_img:
             scan = k.align_img_and_pc(scan, calib_dict)
         if k.crop_pc_by_fov:
             scan = k.crop_pc_using_fov(scan)
         scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners = \
-            k.augment_data(scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners)
+            k.augment_data(index, scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners)
         label_map, label_list, label_map_mask = \
             k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners)
         RGB_Map = k.lidar_preprocess_rgb(scan)
