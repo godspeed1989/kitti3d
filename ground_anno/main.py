@@ -1,4 +1,4 @@
-import os
+import os, sys
 import cv2
 import numpy as np
 from polyROISelector import orientedROISelector, plot_poly
@@ -106,7 +106,7 @@ def save_anno(selector, index, old_anno):
         f.close()
 
 ANNO_DST
-index = 58
+index = 0 if len(sys.argv) < 2 else int(sys.argv[1])
 image = get_lidar_img(index)
 clone = image.copy()
 old_anno = load_anno(index)

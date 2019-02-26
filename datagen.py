@@ -523,9 +523,10 @@ class KITTI(Dataset):
                 else:
                     return None
             # ----
-            sampled = filter_by_ground(sampled, index)
+            if para.filter_sampled_by_ground:
+                sampled = filter_by_ground(sampled, index)
             if sampled is not None:
-                sampled_boxes_centers3d = sampled["boxes_centers3d"]
+                sampled_boxes_centers3d = sampled["boxes_centers3d"].copy()
                 # gt
                 sampled_boxes_corners3d = lidar_center_to_corner_box3d(sampled_boxes_centers3d)
                 all_corners = np.concatenate([all_corners, sampled_boxes_corners3d], axis=0)

@@ -280,7 +280,7 @@ def lidar_center_to_corner_box3d(boxes_center):
 
         w, l, h = size[0], size[1], size[2]
         trackletBox = np.array([  # in velodyne coordinates around zero point and without orientation yet
-            [-l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2], \
+            [l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2], \
             [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2], \
             [0, 0, 0, 0, h, h, h, h]])
 
@@ -388,6 +388,14 @@ def test0():
     labels = to_kitti_result_line(centers3d, corners3d, clses, scores, calib_dict)
     for line in labels:
         print(line, end='')
+
+def test1():
+    center = np.array([[1,3,5, 2,4,6, -1.3]], dtype=np.float32)
+    center[:,6] = center[:,6]
+    box3d = lidar_center_to_corner_box3d(center)
+    print(box3d)
+    center1 = corner_to_center_box3d(box3d[0])
+    print(center1)  # [1,3,8, 4,2,6, 1.3]  ??
 
 if __name__ == '__main__':
     fire.Fire()

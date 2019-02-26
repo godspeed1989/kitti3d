@@ -363,11 +363,12 @@ if __name__ == '__main__':
     # test3
     sampled = sampler.sample_all('Car', fake_boxes_corners3d)
     if sampled is not None:
-        print(sampled["points"].shape, sampled["names"], sep='\n')
+        for i in range(len(sampled["names"])):
+            print(sampled["points"][i].shape, sampled["names"][i])
         sampled_gt_boxes = sampled["boxes_centers3d"]
         print(sampled_gt_boxes.shape)
         # (N, 7) -> (N, 8, 3)
         sampled_boxes_corners3d = lidar_center_to_corner_box3d(sampled_gt_boxes)
 
         all_box3d = np.concatenate((fake_boxes_corners3d, sampled_boxes_corners3d), axis=0)
-        view_pc(sampled['points'], all_box3d)
+        view_pc(np.concatenate(sampled['points'], axis=0), all_box3d)
