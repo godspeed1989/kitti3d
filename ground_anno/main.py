@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 from polyROISelector import orientedROISelector, plot_poly
 from easydict import EasyDict
-
+from scipy.spatial import Delaunay
 
 para = EasyDict()
 para.L1 = -40.0
@@ -14,7 +14,7 @@ para.H1 = -3
 para.H2 = 1.0
 para.grid_sizeLW = 0.1
 para.input_shape = (800, 704)
-
+para.fov = 50
 
 KITTI_PATH = '/mine/KITTI_DAT'
 VELO_SRC = KITTI_PATH + '/training/velodyne'
@@ -36,21 +36,37 @@ with open(path, 'r') as f:
     names.append(lines[-1][:6])
 print("There are {} images in txt file".format(len(names)))
 
+def in_hull(p, hull):
+    if not isinstance(hull,Delaunay):
+        hull = Delaunay(hull)
+    return hull.find_simplex(p)>=0
 
-def point_in_roi(point):
-    if (point[0] - para.W1) < 0.01 or (para.W2 - point[0]) < 0.01:
-        return False
-    if (point[1] - para.L1) < 0.01 or (para.L2 - point[1]) < 0.01:
-        return False
-    if (point[2] - para.H1) < 0.01 or (para.H2 - point[2]) < 0.01:
-        return False
-    return True
+def extract_pc_in_box3d(pc, box3d):
+    ''' pc: (N,3), box3d: (n,3) '''
+    box3d_roi_inds = in_hull(pc[:,:3], box3d)
+    return pc[box3d_roi_inds,:], box3d_roi_inds
+
+def extract_pc_in_fov(pc, fov, X_MIN, X_MAX, Z_MIN, Z_MAX):
+    y = X_MAX * np.tan(fov * np.pi / 180)
+    bbox = [[X_MIN,  0, Z_MIN], [X_MIN,  0, Z_MAX],
+            [X_MAX,  y, Z_MAX], [X_MAX,  y, Z_MIN],
+            [X_MAX, -y, Z_MIN], [X_MAX, -y, Z_MAX]]
+    points, inds = extract_pc_in_box3d(pc, bbox)
+    return points, inds
+
+def crop_pc_using_fov(raw_scan):
+    pc, ind = extract_pc_in_fov(raw_scan[:, :3], para.fov,
+                                para.W1, para.W2,
+                                para.H1, para.H2)
+    inte = raw_scan[ind, 3:]
+    raw_scan = np.concatenate((pc, inte), axis=1)
+    return raw_scan
 
 def lidar_to_bev(velo):
+    velo = crop_pc_using_fov(velo)
     velo_processed = np.zeros((*para.input_shape, 3), dtype=np.float32)
     xs = ((velo[:, 1]-para.L1) / para.grid_sizeLW).astype(np.int32)
     ys = ((velo[:, 0]-para.W1) / para.grid_sizeLW).astype(np.int32)
-    # import ipdb; ipdb.set_trace()
     for (x,y) in zip(xs, ys):
         if x < para.input_shape[0] and x >= 0 and \
            y < para.input_shape[1] and y >= 0:
