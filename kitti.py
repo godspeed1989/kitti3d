@@ -391,7 +391,6 @@ def test0():
 
 def test1():
     center = np.array([[1,3,5, 2,4,6, -1.3]], dtype=np.float32)
-    center[:,6] = center[:,6]
     box3d = lidar_center_to_corner_box3d(center)
     print(box3d)
     center1 = corner_to_center_box3d(box3d[0])

@@ -582,7 +582,7 @@ class KITTI(Dataset):
                 all_corners = all_corners * factor
                 labelmap_corners = labelmap_corners * factor
                 labelmap_mask_corners = labelmap_mask_corners * factor
-        if np.random.choice(2):
+        if np.random.choice(2) and para.augment_data_by_flip:
             # XY flip
             scan[:, 0] = self.geometry['W2'] - scan[:, 0] + self.geometry['W1']
             scan[:, 1] = self.geometry['H2'] - scan[:, 1] + self.geometry['H1']
