@@ -396,5 +396,26 @@ def test1():
     center1 = corner_to_center_box3d(box3d[0])
     print(center1)  # [1,3,8, 4,2,6, 1.3]  ??
 
+def test2():
+    import cv2
+    center = np.array([ [80,80,5, 20,40,6, np.pi*0],
+                        [80,80,5, 20,40,6, np.pi/6],
+                        [80,80,5, 20,40,6, -np.pi/6],
+                        [80,80,5, 10,50,6, np.pi*0.85],
+                        [80,80,5, 10,60,6, np.pi*-0.45],
+                        [80,80,5, 10,70,6, np.pi*-0.75] ], dtype=np.float32)
+    box3d = lidar_center_to_corner_box3d(center)
+    bev = box3d[:,:4,:2]
+    img = np.zeros([160,160,3], dtype=np.float32)
+    colors = [(255,0,0), (0,255,0), (0,0,255), (0,255,255), (255,255,0), (255,0,255)] # b,g,r,yellow,blue,pink
+    for b in range(6):
+        for i in range(4):
+            j = (i+1) % 4
+            cv2.line(img, (bev[b,i,0],bev[b,i,1]), (bev[b,j,0],bev[b,j,1]), colors[b], 1)
+    cv2.line(img, (0, 80), (160, 80), (255,255,255), 1)
+    img = cv2.resize(img, (320,320))
+    cv2.imshow('bev', img)
+    cv2.waitKey()
+
 if __name__ == '__main__':
     fire.Fire()

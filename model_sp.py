@@ -209,7 +209,7 @@ class SpMiddleFHD(nn.Module):
                 SubMConv3d(32, 32, 3, indice_key="subm0", dilation=1),
                 BatchNorm1d(32),
                 nn.ReLU(),
-                SpConv3d(32, 32, 3, 2, padding=1), # [800, 700, 40] -> [400, 350, 20]
+                SpConv3d(32, 32, 3, 2, padding=1), # [800, 704, 40] -> [400, 352, 20]
                 BatchNorm1d(32),
                 nn.ReLU(),
                 #
@@ -222,23 +222,23 @@ class SpMiddleFHD(nn.Module):
                 SubMConv3d(64, 64, 3, indice_key="subm1", dilation=1),
                 BatchNorm1d(64),
                 nn.ReLU(),
-                SpConv3d(64, 64, 3, 2, padding=1), # [400, 350, 20] -> [200, 175, 10]
+                SpConv3d(64, 64, 3, 2, padding=1), # [400, 352, 20] -> [200, 176, 10]
                 BatchNorm1d(64),
                 nn.ReLU(),
                 #
-                SpConv3d(128, 128, (3, 1, 1)),  # [200, 175, 10] -> [200, 175, 8]
+                SpConv3d(128, 128, (3, 1, 1)),  # [200, 176, 10] -> [200, 176, 8]
                 BatchNorm1d(128),
                 nn.ReLU(),
 
-                SpConv3d(128, 128, (3, 1, 1)),  # [200, 175, 4] -> [200, 175, 2]
+                SpConv3d(128, 128, (3, 1, 1)),  # [200, 176, 8] -> [200, 176, 6]
                 BatchNorm1d(128),
                 nn.ReLU(),
 
-                SpConv3d(128, 128, (3, 1, 1), stride=(2, 1, 1)),  # [200, 175, 8] -> [200, 175, 4]
+                SpConv3d(128, 128, (3, 1, 1), stride=(2, 1, 1)),  # [200, 176, 6] -> [200, 176, 3]
                 BatchNorm1d(128),
                 nn.ReLU(),
 
-                SpConv3d(128, 128, (2, 1, 1)),  # [200, 175, 2] -> [200, 175, 1]
+                SpConv3d(128, 128, (2, 1, 1)),  # [200, 175, 3] -> [200, 175, 1]
                 BatchNorm1d(128),
                 nn.ReLU(),
             )
