@@ -238,7 +238,7 @@ class SpMiddleFHD(nn.Module):
                 BatchNorm1d(128),
                 nn.ReLU(),
 
-                SpConv3d(128, 128, (2, 1, 1)),  # [200, 175, 3] -> [200, 175, 1]
+                SpConv3d(128, 128, (2, 1, 1)),  # [200, 176, 3] -> [200, 176, 1]
                 BatchNorm1d(128),
                 nn.ReLU(),
             )
@@ -442,6 +442,18 @@ def test1():
         print('out', out[0].size(), out[1].size())
     else:
         print('out', out.size())
+
+def test2():
+    if torch.cuda.is_available():
+        dev = 'cuda'
+    else:
+        dev = 'cpu'
+    model = RPNV2().to(dev)
+    x = torch.autograd.Variable(torch.randn(5, 128, 200, 176)).to(dev)
+    cls, reg = model(x)
+    import torchviz
+    g = torchviz.make_dot(cls.mean(), params=dict(model.named_parameters()))
+    g.view()
 
 if __name__ == '__main__':
     fire.Fire()
