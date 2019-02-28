@@ -122,9 +122,9 @@ def train_net(config_name, device, val=False):
             # decoder input is (B,6,H,W), output is (B,8,H,W)
             if para.corner_loss and epoch >= para.corner_loss_start:
                 net.set_decode(True)
-                label_map = label_map.permute(0, 2, 3, 1)
-                gt_cls = label_map[:,:1,:,:]
-                gt_reg = label_map[:,1:,:,:]
+                label_map_p = label_map.permute(0, 3, 1, 2)
+                gt_cls = label_map_p[:,:1,:,:]
+                gt_reg = label_map_p[:,1:,:,:]
                 if para.estimate_bh:
                     cls_reg, bh = net(*net_input)
                     predictions = torch.cat([cls_reg, bh], dim=3)

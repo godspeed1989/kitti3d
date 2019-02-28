@@ -12,7 +12,7 @@ class Decoder(nn.Module):
         self.target_mean = para.target_mean
         self.target_std_dev = para.target_std_dev
 
-    def forward(self, x):
+    def forward(self, xx):
         '''
 
         :param x: Tensor 6-channel geometry
@@ -29,11 +29,12 @@ class Decoder(nn.Module):
         # Tensor in (B, C, H, W)
 
         device = torch.device('cpu')
-        if x.is_cuda:
-            device = x.get_device()
+        if xx.is_cuda:
+            device = xx.get_device()
 
+        x = torch.zeros_like(xx)
         for i in range(para.box_code_len):
-            x[:, i, :, :] = x[:, i, :, :] * self.target_std_dev[i] + self.target_mean[i]
+            x[:, i, :, :] = xx[:, i, :, :] * self.target_std_dev[i] + self.target_mean[i]
 
         if para.box_code_len == 6:
             cos_t, sin_t, dx, dy, log_w, log_l = torch.chunk(x, 6, dim=1)
