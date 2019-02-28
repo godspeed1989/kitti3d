@@ -25,8 +25,8 @@ if para.estimate_bh:
     para.target_mean = np.resize(para.target_mean, para.box_code_len)
     para.target_std_dev = np.resize(para.target_std_dev, para.box_code_len)
     para.height_bias = 5
-    para.target_mean[-2:] = np.array([1.239, 1.617], dtype=np.float32)
-    para.target_std_dev[-2:] = np.array([0.096, 0.072], dtype=np.float32)
+    para.target_mean[-2:] = np.array([3.468, 5.059], dtype=np.float32)
+    para.target_std_dev[-2:] = np.array([0.34, 0.373], dtype=np.float32)
 
 para.L1 = -40.0
 para.L2 = 40.0

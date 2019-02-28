@@ -40,10 +40,10 @@ class Decoder(nn.Module):
         elif para.box_code_len == 5:
             theta, dx, dy, log_w, log_l = torch.chunk(x, 5, dim=1)
         elif para.box_code_len == 8:
-            cos_t, sin_t, dx, dy, log_w, log_l, log_bottom, log_head = torch.chunk(x, 8, dim=1)
+            cos_t, sin_t, dx, dy, log_w, log_l, bottom, head = torch.chunk(x, 8, dim=1)
             theta = torch.atan2(sin_t, cos_t)
         elif para.box_code_len == 7:
-            theta, dx, dy, log_w, log_l, log_bottom, log_head = torch.chunk(x, 7, dim=1)
+            theta, dx, dy, log_w, log_l, bottom, head = torch.chunk(x, 7, dim=1)
 
         if para.sin_angle_loss:
             theta = torch.clamp(theta, -1, 1)
@@ -74,9 +74,9 @@ class Decoder(nn.Module):
                                  front_right_x, front_right_y, front_left_x, front_left_y], dim=1)
 
         if para.estimate_bh:
-            log_bottom = log_bottom.exp() - para.height_bias
-            log_head = log_head.exp() - para.height_bias
-            return decoded_reg, torch.cat([log_bottom, log_head], dim=1)
+            bottom = bottom - para.height_bias
+            head = head - para.height_bias
+            return decoded_reg, torch.cat([bottom, head], dim=1)
         else:
             return decoded_reg
 
