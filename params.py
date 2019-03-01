@@ -7,8 +7,8 @@ para = EasyDict()
 # 5: r, x, y, w, l
 para.box_code_len = 6
 if para.box_code_len == 6:
-    para.target_mean = np.array([0.022, -0.006,  0.194,  0.192,  0.487,  1.37], dtype=np.float32)
-    para.target_std_dev = np.array([1.0, 1.0, 0.537, 0.389, 0.064, 0.109], dtype=np.float32)
+    para.target_mean = np.array([0.799, -0.053,  0.194,  0.192,  0.487,  1.37], dtype=np.float32)
+    para.target_std_dev = np.array([0.325, 0.504, 0.537, 0.389, 0.064, 0.109], dtype=np.float32)
 elif para.box_code_len == 5:
     para.target_mean = np.array([0.0, 0.194, 0.192, 0.487, 1.37 ], dtype=np.float32)
     para.target_std_dev = np.array([1.0, 0.537, 0.389, 0.064, 0.109], dtype=np.float32)
@@ -18,6 +18,9 @@ else:
 para.sin_angle_loss = False
 if para.sin_angle_loss:
     assert para.box_code_len == 5
+
+para.corner_loss = False
+para.corner_loss_start = 40
 
 para.estimate_bh = False
 if para.estimate_bh:

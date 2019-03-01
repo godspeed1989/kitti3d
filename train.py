@@ -11,6 +11,7 @@ from datagen import get_data_loader
 from utils import get_model_name, build_model, load_config, plot_bev, plot_label_map, dict2str
 from postprocess import non_max_suppression
 from kitti import corners2d_to_3d, to_kitti_result_line
+from model_utils import Decoder
 
 logf = None
 def print_log(string, stdout=True, progress=None):
@@ -98,6 +99,8 @@ def train_net(config_name, device, val=False):
     net.train()
     # net.backbone.conv1.register_forward_hook(printnorm)
     # net.backbone.conv2.register_backward_hook(printgradnorm)
+    if para.corner_loss:
+        decoder = Decoder()
 
     start_time = time.time()
     for epoch in range(max_epochs):
@@ -114,10 +117,30 @@ def train_net(config_name, device, val=False):
             else:
                 label_map_mask = None
             optimizer.zero_grad()
-            # Forward
-            predictions = net(*net_input)
-            # ipdb.set_trace()
-            loss, loc_loss, cls_loss = criterion(predictions, label_map, label_map_mask)
+
+            # net output is (B,H,W,C), label_map is (B,H,W,C)
+            # decoder input is (B,6,H,W), output is (B,8,H,W)
+            if para.corner_loss and epoch >= para.corner_loss_start:
+                net.set_decode(True)
+                label_map = label_map.permute(0, 2, 3, 1)
+                gt_cls = label_map[:,:1,:,:]
+                gt_reg = label_map[:,1:,:,:]
+                if para.estimate_bh:
+                    cls_reg, bh = net(*net_input)
+                    predictions = torch.cat([cls_reg, bh], dim=3)
+                    gt_reg_corner, gt_bh = decoder(gt_reg)
+                    ground_truth = torch.cat([gt_cls, gt_reg_corner, gt_bh], dim=1)
+                else:
+                    predictions = net(*net_input)
+                    gt_reg_corner = decoder(gt_reg)
+                    ground_truth = torch.cat([gt_cls, gt_reg_corner], dim=1)
+                ground_truth = ground_truth.permute(0, 2, 3, 1)
+            else:
+                net.set_decode(False)
+                predictions = net(*net_input)
+                ground_truth = label_map
+
+            loss, loc_loss, cls_loss = criterion(predictions, ground_truth, label_map_mask)
             print_log('%.5f loc %.5f cls %.5f' % (loss.data, loc_loss, cls_loss), False, pbar)
 
             loss.backward()
@@ -137,6 +160,7 @@ def train_net(config_name, device, val=False):
             torch.save(net.state_dict(), model_path)
             print_log("Checkpoint saved at {}".format(model_path))
             if val:
+                net.set_decode(False)
                 val_loss = validate_batch(net, criterion, batch_size, val_data_loader, device)
                 print_log("Epoch {} | Validation Loss: {}".format(epoch + 1, val_loss))
     end_time = time.time()

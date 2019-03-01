@@ -1,3 +1,4 @@
+import fire
 import torch
 from torch import nn
 from params import para
@@ -130,3 +131,21 @@ class Header(nn.Module):
         reg = self.reghead(x)
 
         return cls, reg
+
+def test0():
+    if torch.cuda.is_available():
+        dev = 'cuda'
+    else:
+        dev = 'cpu'
+    model = Decoder().to(dev)
+    x = torch.randn(4, para.box_code_len, 200, 176).to(dev)
+    if para.estimate_bh:
+        decoded_reg, bh = model(x)
+        print('bh', bh.size()) # [4, 2, 200, 176]
+    else:
+        decoded_reg = model(x)
+    print('decoded_reg', decoded_reg.size()) # [4, 8, 200, 176]
+
+
+if __name__ == "__main__":
+    fire.Fire()
