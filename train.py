@@ -108,6 +108,10 @@ def train_net(config_name, device, val=False):
         num_samples = 0
         scheduler.step()
         print_log("Learning Rate for Epoch {} is {} ".format(epoch + 1, scheduler.get_lr()))
+        if para.corner_loss and epoch >= para.corner_loss_start:
+            print_log('Loc Corner Loss...')
+        else:
+            print_log('Loc SmoothL1 Loss...')
         pbar = tqdm(total=len(train_data_loader), initial=0, desc='train')
         for i, data in enumerate(train_data_loader):
             net_input = _get_net_input(data, device, data['cur_batch_size'])

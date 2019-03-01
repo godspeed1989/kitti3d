@@ -1,6 +1,6 @@
 {
   "resume_training": false,
-  "old_ckpt_name": "PIXOR__epoch100",
+  "old_ckpt_name": "PIXOR_SPARSE__epoch85",
 
   "loss_type": "CustomLoss",
   "optimizer": "ADAM",

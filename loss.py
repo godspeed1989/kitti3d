@@ -66,10 +66,10 @@ class CustomLoss(nn.Module):
 
         batch_size = targets.size(0)
         image_size = targets.size(1) * targets.size(2)
-        cls_preds = preds[..., 0]
+        cls_preds = preds[..., :1]
         loc_preds = preds[..., 1:]
 
-        cls_targets = targets[..., 0]
+        cls_targets = targets[..., :1]
         loc_targets = targets[..., 1:]
 
         if mask is None:
@@ -89,11 +89,11 @@ class CustomLoss(nn.Module):
         loc_loss = torch.tensor(0.0).to(self.device)
         pos_items = cls_targets.nonzero().size(0)
         if pos_items != 0:
-            for i in range(loc_targets.shape[-1]):
-                loc_preds_filtered = cls_targets * loc_preds[..., i].float()
-                loc_loss += F.smooth_l1_loss(loc_preds_filtered, loc_targets[..., i], reduction='sum')
+            loc_preds_filtered = cls_targets * loc_preds
+            loc_targets_filtered = cls_targets * loc_targets
+            loc_loss = F.smooth_l1_loss(loc_preds_filtered, loc_targets_filtered, reduction='sum')
             #
-            loc_loss = loc_loss / (batch_size * image_size)# Pos item is summed over all batch
+            loc_loss = loc_loss / (batch_size * pos_items)  # Pos item is summed over all batch
 
         if focal_loss_ver == 0:
             cls_loss = cls_loss / (batch_size * image_size)

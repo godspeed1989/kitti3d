@@ -32,9 +32,9 @@ class Decoder(nn.Module):
         if xx.is_cuda:
             device = xx.get_device()
 
-        x = torch.zeros_like(xx)
-        for i in range(para.box_code_len):
-            x[:, i, :, :] = xx[:, i, :, :] * self.target_std_dev[i] + self.target_mean[i]
+        mean = torch.tensor(self.target_mean, device=device).reshape([1, para.box_code_len, 1, 1])
+        stddev = torch.tensor(self.target_std_dev, device=device).reshape([1, para.box_code_len, 1, 1])
+        x = xx * stddev + mean
 
         if para.box_code_len == 6:
             cos_t, sin_t, dx, dy, log_w, log_l = torch.chunk(x, 6, dim=1)
