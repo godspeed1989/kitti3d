@@ -89,6 +89,11 @@ def conv3x3(in_planes, out_planes, stride=1, bias=False):
                      padding=1, bias=bias)
 
 
+def conv1x1(in_planes, out_planes, stride=1, bias=False):
+    """1x1 convolution"""
+    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride,
+                     padding=0, bias=bias)
+
 class Header(nn.Module):
 
     def __init__(self, use_bn=True, input_channels=96, aggr_feat=False):
@@ -110,8 +115,8 @@ class Header(nn.Module):
         else:
             channels = input_channels
 
-        self.clshead = conv3x3(channels, 1, bias=True)
-        self.reghead = conv3x3(channels, para.box_code_len, bias=True)
+        self.clshead = conv1x1(channels, 1, bias=True)
+        self.reghead = conv1x1(channels, para.box_code_len, bias=True)
 
     def forward(self, x):
         if self.aggr_feat:
