@@ -20,7 +20,7 @@ if para.sin_angle_loss:
     assert para.box_code_len == 5
 
 para.corner_loss = False
-para.corner_loss_start = 40
+para.corner_loss_start = 100
 
 para.estimate_bh = False
 if para.estimate_bh:

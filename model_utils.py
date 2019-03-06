@@ -103,14 +103,12 @@ class Header(nn.Module):
         bias = not use_bn
         self.aggr_feat = aggr_feat
         if aggr_feat:
-            self.conv1 = conv3x3(input_channels, 96, bias=bias)
-            self.bn1 = nn.BatchNorm2d(96)
-            self.conv2 = conv3x3(96, 96, bias=bias)
-            self.bn2 = nn.BatchNorm2d(96)
-            self.conv3 = conv3x3(96, 96, bias=bias)
+            self.conv1 = conv3x3(input_channels, 256, bias=bias)
+            self.bn1 = nn.BatchNorm2d(256)
+            self.conv2 = conv3x3(256, 128, bias=bias)
+            self.bn2 = nn.BatchNorm2d(128)
+            self.conv3 = conv3x3(128, 96, bias=bias)
             self.bn3 = nn.BatchNorm2d(96)
-            self.conv4 = conv3x3(96, 96, bias=bias)
-            self.bn4 = nn.BatchNorm2d(96)
             channels = 96
         else:
             channels = input_channels
@@ -129,9 +127,6 @@ class Header(nn.Module):
             x = self.conv3(x)
             if self.use_bn:
                 x = self.bn3(x)
-            x = self.conv4(x)
-            if self.use_bn:
-                x = self.bn4(x)
 
         cls = torch.sigmoid(self.clshead(x))
         reg = self.reghead(x)

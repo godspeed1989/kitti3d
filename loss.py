@@ -92,8 +92,8 @@ class CustomLoss(nn.Module):
             loc_preds_filtered = cls_targets * loc_preds
             loc_targets_filtered = cls_targets * loc_targets
             loc_loss = F.smooth_l1_loss(loc_preds_filtered, loc_targets_filtered, reduction='sum')
-            #
-            loc_loss = loc_loss / (batch_size * pos_items)  # Pos item is summed over all batch
+            # cls_targets.sum() is BAD
+            loc_loss = loc_loss / (batch_size * image_size)  # Pos item is summed over all batch
 
         if focal_loss_ver == 0:
             cls_loss = cls_loss / (batch_size * image_size)

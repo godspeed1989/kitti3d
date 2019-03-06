@@ -237,7 +237,7 @@ def eval_one_sample(net, net_input, config, label_list=None,
             if para.estimate_bh:
                 center3d, corners3d = corners2d_to_3d(corners, bh[:,0], bh[:,1])
             else:
-                center3d, corners3d = corners2d_to_3d(corners, np.array([-1.5]), np.array([.1]))
+                center3d, corners3d = corners2d_to_3d(corners, np.array([-1.532]), np.array([0.059]))
             line = to_kitti_result_line(center3d, corners3d, 'Car', scores, calib_dict)
             return line
 

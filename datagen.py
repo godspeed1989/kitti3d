@@ -363,7 +363,7 @@ class KITTI(Dataset):
             self.update_label_map(label_map, labelmap_bev_corners,
                 label_map_mask, labelmap_mask_bev_corners, reg_target)
             label_list.append(bev_corners)
-        label_map_mask = label_map_mask + label_map[:,:,0] * 0.5
+        label_map_mask = label_map_mask + label_map[:,:,0]
 
         return label_map, label_list, label_map_mask
 
