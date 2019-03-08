@@ -129,11 +129,11 @@ def train_net(config_name, device, val=False):
                 label_map_p = label_map.permute(0, 3, 1, 2)
                 gt_cls = label_map_p[:,:1,:,:]
                 gt_reg = label_map_p[:,1:,:,:]
-                if para.estimate_bh:
-                    cls_reg, bh = net(*net_input)
-                    predictions = torch.cat([cls_reg, bh], dim=3)
-                    gt_reg_corner, gt_bh = decoder(gt_reg)
-                    ground_truth = torch.cat([gt_cls, gt_reg_corner, gt_bh], dim=1)
+                if para.estimate_zh:
+                    cls_reg, zh = net(*net_input)
+                    predictions = torch.cat([cls_reg, zh], dim=3)
+                    gt_reg_corner, gt_zh = decoder(gt_reg)
+                    ground_truth = torch.cat([gt_cls, gt_reg_corner, gt_zh], dim=1)
                 else:
                     predictions = net(*net_input)
                     gt_reg_corner = decoder(gt_reg)
@@ -179,8 +179,8 @@ def eval_one_sample(net, net_input, config, label_list=None,
     with torch.no_grad():
         # Forward Pass
         t_start = time.time()
-        if para.estimate_bh:
-            pred, pred_bh = net(*net_input)
+        if para.estimate_zh:
+            pred, pred_zh = net(*net_input)
         else:
             pred = net(*net_input)
         print("Forward pass time", time.time() - t_start)
@@ -202,11 +202,11 @@ def eval_one_sample(net, net_input, config, label_list=None,
         for i in range(1, 9):
             corners[:, i - 1] = torch.masked_select(pred[..., i], activation)
         corners = corners.view(-1, 4, 2).cpu().numpy()
-        if para.estimate_bh:
-            bh = torch.zeros((num_boxes, 2))
-            bh[..., 0] = torch.masked_select(pred_bh[..., 0], activation)
-            bh[..., 1] = torch.masked_select(pred_bh[..., 1], activation)
-            bh = bh.cpu().numpy()
+        if para.estimate_zh:
+            zh = torch.zeros((num_boxes, 2))
+            zh[..., 0] = torch.masked_select(pred_zh[..., 0], activation)
+            zh[..., 1] = torch.masked_select(pred_zh[..., 1], activation)
+            zh = zh.cpu().numpy()
 
         scores = torch.masked_select(pred[..., 0], activation).cpu().numpy()
 
@@ -215,8 +215,8 @@ def eval_one_sample(net, net_input, config, label_list=None,
         selected_ids = non_max_suppression(corners, scores, nms_iou_threshold)
         corners = corners[selected_ids]
         scores = scores[selected_ids]
-        if para.estimate_bh:
-            bh = bh[selected_ids]
+        if para.estimate_zh:
+            zh = zh[selected_ids]
         print("Non max suppression time:", time.time() - t_start)
 
         if vis:
@@ -234,10 +234,10 @@ def eval_one_sample(net, net_input, config, label_list=None,
             plot_label_map(cls_pred.cpu().numpy())
 
         if to_kitti_file:
-            if para.estimate_bh:
-                center3d, corners3d = corners2d_to_3d(corners, bh[:,0], bh[:,1])
+            if para.estimate_zh:
+                center3d, corners3d = corners2d_to_3d(corners, zh[:,0], zh[:,1])
             else:
-                center3d, corners3d = corners2d_to_3d(corners, np.array([-1.532]), np.array([0.059]))
+                center3d, corners3d = corners2d_to_3d(corners, np.array([-0.74]), np.array([0.456]))
             line = to_kitti_result_line(center3d, corners3d, 'Car', scores, calib_dict)
             return line
 

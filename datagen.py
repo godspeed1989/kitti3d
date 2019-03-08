@@ -252,9 +252,9 @@ class KITTI(Dataset):
                     actual_reg_target[0] = np.sin(reg_target[0])
             else:
                 raise NotImplementedError
-            if para.estimate_bh:
-                actual_reg_target[-2] = reg_target[-2] + para.height_bias
-                actual_reg_target[-1] = reg_target[-1] + para.height_bias
+            if para.estimate_zh:
+                actual_reg_target[-2] = reg_target[-2]
+                actual_reg_target[-1] = np.log(reg_target[-1])
 
             label_x = p[0]
             label_y = p[1]
@@ -320,9 +320,12 @@ class KITTI(Dataset):
         return index, boxes3d_corners, labelmap_boxes3d_corners, labelmap_mask_boxes3d_corners, calib_dict
 
     def get_reg_targets(self, box3d_pts_3d):
+        # (8,3) -> (box_code_len)
         bev_corners = box3d_pts_3d[:4, :2]
-        head = np.max(box3d_pts_3d[:, 2])
+        top = np.max(box3d_pts_3d[:, 2])
         bottom = np.min(box3d_pts_3d[:, 2])
+        z = (top + bottom) / 2.0
+        h = top - bottom
         #
         centers = corner_to_center_box3d(box3d_pts_3d)
         x = centers[0]
@@ -335,9 +338,9 @@ class KITTI(Dataset):
         elif para.box_code_len == 5:
             reg_target = [yaw, x, y, w, l]
         elif para.box_code_len == 8:
-            reg_target = [np.cos(yaw), np.sin(yaw), x, y, w, l, bottom, head]
+            reg_target = [np.cos(yaw), np.sin(yaw), x, y, w, l, z, h]
         elif para.box_code_len == 7:
-            reg_target = [yaw, x, y, w, l, bottom, head]
+            reg_target = [yaw, x, y, w, l, z, h]
         else:
             raise NotImplementedError
 

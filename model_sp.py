@@ -368,8 +368,8 @@ class PIXOR_SPARSE(nn.Module):
         cls, reg = self.rpn(dense_map)
 
         if self.use_decode:
-            if para.estimate_bh:
-                reg, bh = self.corner_decoder(reg)
+            if para.estimate_zh:
+                reg, zh = self.corner_decoder(reg)
             else:
                 reg = self.corner_decoder(reg)
 
@@ -377,8 +377,8 @@ class PIXOR_SPARSE(nn.Module):
         cls = cls.permute(0, 2, 3, 1)
         reg = reg.permute(0, 2, 3, 1)
 
-        if self.use_decode and para.estimate_bh:
-            return torch.cat([cls, reg], dim=3), bh.permute(0, 2, 3, 1)
+        if self.use_decode and para.estimate_zh:
+            return torch.cat([cls, reg], dim=3), zh.permute(0, 2, 3, 1)
         else:
             return torch.cat([cls, reg], dim=3)
 
@@ -436,12 +436,12 @@ def test1():
         dev = 'cpu'
     voxels_feature, coords_pad, grid_size = _prepare_voxel(dev)
 
-    net = PIXOR_SPARSE(grid_size, para.ratio, use_bn=True, decode=True).to(dev)
+    net = PIXOR_SPARSE(grid_size, para.ratio, use_bn=True, decode=False).to(dev)
     out = net(voxels_feature, coords_pad, batch_size=1)
-    if net.use_decode and para.estimate_bh:
-        print('out', out[0].size(), out[1].size())
+    if net.use_decode and para.estimate_zh:
+        print('out', out[0].size(), out[1].size()) # [1, 200, 176, 9] [1, 200, 176, 2]
     else:
-        print('out', out.size())
+        print('out', out.size()) # [1, 200, 176, box_code_len+1]
 
 def test2():
     if torch.cuda.is_available():

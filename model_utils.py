@@ -42,10 +42,10 @@ class Decoder(nn.Module):
         elif para.box_code_len == 5:
             theta, dx, dy, log_w, log_l = torch.chunk(x, 5, dim=1)
         elif para.box_code_len == 8:
-            cos_t, sin_t, dx, dy, log_w, log_l, bottom, head = torch.chunk(x, 8, dim=1)
+            cos_t, sin_t, dx, dy, log_w, log_l, z, log_h = torch.chunk(x, 8, dim=1)
             theta = torch.atan2(sin_t, cos_t)
         elif para.box_code_len == 7:
-            theta, dx, dy, log_w, log_l, bottom, head = torch.chunk(x, 7, dim=1)
+            theta, dx, dy, log_w, log_l, z, log_h = torch.chunk(x, 7, dim=1)
 
         if para.sin_angle_loss:
             theta = torch.clamp(theta, -1, 1)
@@ -75,10 +75,9 @@ class Decoder(nn.Module):
         decoded_reg = torch.cat([rear_left_x, rear_left_y, rear_right_x, rear_right_y,
                                  front_right_x, front_right_y, front_left_x, front_left_y], dim=1)
 
-        if para.estimate_bh:
-            bottom = bottom - para.height_bias
-            head = head - para.height_bias
-            return decoded_reg, torch.cat([bottom, head], dim=1)
+        if para.estimate_zh:
+            h = log_h.exp()
+            return decoded_reg, torch.cat([z, h], dim=1)
         else:
             return decoded_reg
 
@@ -140,9 +139,9 @@ def test0():
         dev = 'cpu'
     model = Decoder().to(dev)
     x = torch.randn(4, para.box_code_len, 200, 176).to(dev)
-    if para.estimate_bh:
-        decoded_reg, bh = model(x)
-        print('bh', bh.size()) # [4, 2, 200, 176]
+    if para.estimate_zh:
+        decoded_reg, zh = model(x)
+        print('zh', zh.size()) # [4, 2, 200, 176]
     else:
         decoded_reg = model(x)
     print('decoded_reg', decoded_reg.size()) # [4, 8, 200, 176]
