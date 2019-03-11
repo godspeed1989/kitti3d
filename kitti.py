@@ -243,12 +243,12 @@ def lidar_to_camera(x, y, z, T_VELO_2_CAM, R_RECT_0):
 
 def angle_in_limit(angle):
     # To limit the angle in -pi/2 - pi/2
-    limit_degree = 5
     while angle > np.pi / 2:
         angle -= np.pi
     while angle < -np.pi / 2:
         angle += np.pi
     assert -np.pi/2 <= angle <= np.pi/2
+    #limit_degree = 5
     # if abs(angle + np.pi / 2) < limit_degree / 180 * np.pi:
     #     angle = np.pi / 2
     return angle

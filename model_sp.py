@@ -336,7 +336,12 @@ class RPNV2(nn.Module):
             x = torch.cat(ups, dim=1)
         else:
             x = ups[0]
-        cls, reg = self.header(x)
+
+        if para.estimate_dir:
+            cls, reg, direct = self.header(x)
+            reg = torch.cat([reg, direct], dim=1)
+        else:
+            cls, reg = self.header(x)
 
         return cls, reg
 
@@ -441,7 +446,7 @@ def test1():
     if net.use_decode and para.estimate_zh:
         print('out', out[0].size(), out[1].size()) # [1, 200, 176, 9] [1, 200, 176, 2]
     else:
-        print('out', out.size()) # [1, 200, 176, box_code_len+1]
+        print('out', out.size()) # [1, 200, 176, label_channels]
 
 def test2():
     if torch.cuda.is_available():

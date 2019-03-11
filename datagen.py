@@ -66,7 +66,7 @@ class KITTI(Dataset):
             'H1': para.H1,
             'H2': para.H2,
             'input_shape': (*para.input_shape, self.input_channels),
-            'label_shape': (*para.label_shape, 1+para.box_code_len),
+            'label_shape': (*para.label_shape, para.label_channels),
             'ratio': para.ratio,
             'fov': 50,  # field of view in degree
         }
@@ -195,7 +195,7 @@ class KITTI(Dataset):
         :return: normalized regression map for all non_zero classification locations
         '''
         cls_map = label_map[..., 0]
-        reg_map = label_map[..., 1:]
+        reg_map = label_map[..., 1:1+para.box_code_len]
 
         index = np.nonzero(cls_map)
         reg_map[index] = (reg_map[index] - self.target_mean)/self.target_std_dev
@@ -225,7 +225,7 @@ class KITTI(Dataset):
         print("There are {} images in txt file".format(len(names)))
         return names
 
-    def update_label_map(self, labelmap, bev_corners, map_mask, bev_corners_mask, reg_target):
+    def update_label_map(self, labelmap, bev_corners, map_mask, bev_corners_mask, reg_target, direct):
         label_corners = bev_corners / para.grid_sizeLW / self.geometry['ratio']
         # y to positive
         # XY in LiDAR <--> YX in label map
@@ -260,6 +260,8 @@ class KITTI(Dataset):
             label_y = p[1]
             labelmap[label_y, label_x, 0] = 1.0
             labelmap[label_y, label_x, 1:1+para.box_code_len] = actual_reg_target
+            if para.estimate_dir:
+                labelmap[label_y, label_x, -1] = direct
         #
         label_corners_mask = bev_corners_mask / para.grid_sizeLW / self.geometry['ratio']
         label_corners_mask[:, 1] += self.geometry['label_shape'][0] / 2.0
@@ -333,6 +335,7 @@ class KITTI(Dataset):
         l = centers[3]
         w = centers[4]
         yaw = angle_in_limit(-centers[6])
+        direct = 1 if abs(-centers[6]) > np.pi/2.0 else 0
         if para.box_code_len == 6:
             reg_target = [np.cos(yaw), np.sin(yaw), x, y, w, l]
         elif para.box_code_len == 5:
@@ -344,7 +347,7 @@ class KITTI(Dataset):
         else:
             raise NotImplementedError
 
-        return bev_corners, reg_target
+        return bev_corners, reg_target, direct
 
     def get_label_map(self, boxes3d_corners, labelmap_boxes3d_corners, labelmap_mask_boxes3d_corners):
         '''return
@@ -360,11 +363,11 @@ class KITTI(Dataset):
         label_list = []
         for box3d_corners, labelmap_box3d_corners, labelmap_mask_box3d_corners in \
                 zip(boxes3d_corners, labelmap_boxes3d_corners, labelmap_mask_boxes3d_corners):
-            bev_corners, reg_target = self.get_reg_targets(box3d_corners)
+            bev_corners, reg_target, direct = self.get_reg_targets(box3d_corners)
             labelmap_bev_corners = labelmap_box3d_corners[:4, :2]
             labelmap_mask_bev_corners = labelmap_mask_box3d_corners[:4, :2]
             self.update_label_map(label_map, labelmap_bev_corners,
-                label_map_mask, labelmap_mask_bev_corners, reg_target)
+                label_map_mask, labelmap_mask_bev_corners, reg_target, direct)
             label_list.append(bev_corners)
         label_map_mask = label_map_mask + label_map[:,:,0]
 

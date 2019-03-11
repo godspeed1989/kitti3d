@@ -67,13 +67,18 @@ class CustomLoss(nn.Module):
         batch_size = targets.size(0)
         image_size = targets.size(1) * targets.size(2)
         cls_preds = preds[..., :1]
-        loc_preds = preds[..., 1:]
+        loc_preds = preds[..., 1:1+para.box_code_len]
 
         cls_targets = targets[..., :1]
-        loc_targets = targets[..., 1:]
+        loc_targets = targets[..., 1:1+para.box_code_len]
 
         if mask is None:
             mask = torch.tensor(1.0, dtype=preds.dtype).to(self.device)
+
+        if para.estimate_dir:
+            dir_preds = preds[..., -1:] * cls_targets
+            dir_targets = targets[..., -1:] * cls_targets
+            dir_loss = cross_entropy(dir_preds, dir_targets) / (batch_size * image_size)
 
         ################################################################
         cls_loss = focal_loss(cls_preds, cls_targets, mask)
@@ -99,7 +104,11 @@ class CustomLoss(nn.Module):
             cls_loss = cls_loss / (batch_size * image_size)
         alpha = 1.0
         beta = 1.0
-        return alpha*cls_loss + beta*loc_loss, loc_loss.data, cls_loss.data
+        total_loss = alpha*cls_loss + beta*loc_loss
+        if para.estimate_dir:
+            gamma = 0.1
+            total_loss += gamma * dir_loss
+        return total_loss, loc_loss.data, cls_loss.data
 
 #######################################################################################
 

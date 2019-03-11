@@ -1,4 +1,5 @@
 import fire
+import numpy as np
 import torch
 from torch import nn
 from params import para
@@ -32,9 +33,13 @@ class Decoder(nn.Module):
         if xx.is_cuda:
             device = xx.get_device()
 
+        if para.estimate_dir:
+            x = xx[:, :-1, :, :]
+            direct = xx[:, -1:, :, :]
+
         mean = torch.tensor(self.target_mean, device=device).reshape([1, para.box_code_len, 1, 1])
         stddev = torch.tensor(self.target_std_dev, device=device).reshape([1, para.box_code_len, 1, 1])
-        x = xx * stddev + mean
+        x = x * stddev + mean
 
         if para.box_code_len == 6:
             cos_t, sin_t, dx, dy, log_w, log_l = torch.chunk(x, 6, dim=1)
@@ -46,6 +51,11 @@ class Decoder(nn.Module):
             theta = torch.atan2(sin_t, cos_t)
         elif para.box_code_len == 7:
             theta, dx, dy, log_w, log_l, z, log_h = torch.chunk(x, 7, dim=1)
+
+        if para.estimate_dir:
+            dir_mask = (direct > 0.5).type(torch.float32)
+            sign = theta.sign().type(torch.float32) * -1
+            theta = theta + dir_mask * sign * np.pi
 
         if para.sin_angle_loss:
             theta = torch.clamp(theta, -1, 1)
@@ -114,6 +124,8 @@ class Header(nn.Module):
 
         self.clshead = conv1x1(channels, 1, bias=True)
         self.reghead = conv1x1(channels, para.box_code_len, bias=True)
+        if para.estimate_dir:
+            self.dirhead = conv1x1(channels, 1, bias=True)
 
     def forward(self, x):
         if self.aggr_feat:
@@ -130,7 +142,11 @@ class Header(nn.Module):
         cls = torch.sigmoid(self.clshead(x))
         reg = self.reghead(x)
 
-        return cls, reg
+        if para.estimate_dir:
+            direct = torch.sigmoid(self.dirhead(x))
+            return cls, reg, direct
+        else:
+            return cls, reg
 
 def test0():
     if torch.cuda.is_available():

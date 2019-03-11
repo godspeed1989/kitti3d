@@ -70,6 +70,11 @@ use_dense_net(para.dense_net)
 
 para.label_shape = (200, 176)
 
+para.estimate_dir = False
+para.label_channels = 1 + para.box_code_len
+if para.estimate_dir:
+    para.label_channels += 1
+
 if para.channel_type == 'rgb':
     para.input_channels = 3
 if para.channel_type == 'pixor':
