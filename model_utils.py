@@ -36,6 +36,8 @@ class Decoder(nn.Module):
         if para.estimate_dir:
             x = xx[:, :-1, :, :]
             direct = xx[:, -1:, :, :]
+        else:
+            x = xx
 
         mean = torch.tensor(self.target_mean, device=device).reshape([1, para.box_code_len, 1, 1])
         stddev = torch.tensor(self.target_std_dev, device=device).reshape([1, para.box_code_len, 1, 1])
