@@ -91,7 +91,7 @@ def plot_label_map(label_map):
     plt.imshow(label_map)
     plt.show()
 
-def get_points_in_a_rotated_box(corners):
+def get_points_in_a_rotated_box(corners, xmin = 0, ymin = 0, xmax = 176, ymax = 200):
     def minY(x0, y0, x1, y1, x):
         if x0 == x1:
             # vertical line, y0 is lowest
@@ -137,11 +137,6 @@ def get_points_in_a_rotated_box(corners):
     tx, ty = t
     m1x, m1y = m1
     m2x, m2y = m2
-
-    xmin = 0
-    ymin = 0
-    xmax = 175
-    ymax = 200
 
     # inward-rounded integer bounds
     # note that we're clamping the area of interest to (xmin,ymin)-(xmax,ymax)

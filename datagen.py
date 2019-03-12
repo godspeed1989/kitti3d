@@ -9,7 +9,6 @@ import time
 import torch
 from copy import deepcopy
 from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
 from scipy.spatial import Delaunay
 from collections import defaultdict
 
@@ -231,7 +230,9 @@ class KITTI(Dataset):
         # XY in LiDAR <--> YX in label map
         label_corners[:, 1] += self.geometry['label_shape'][0] / 2.0
 
-        points = get_points_in_a_rotated_box(label_corners)
+        points = get_points_in_a_rotated_box(label_corners,
+                    xmax = self.geometry['label_shape'][1],
+                    ymax = self.geometry['label_shape'][0])
 
         for p in points:
             metric_x, metric_y = trasform_label2metric(np.array(p),
@@ -265,7 +266,9 @@ class KITTI(Dataset):
         #
         label_corners_mask = bev_corners_mask / para.grid_sizeLW / self.geometry['ratio']
         label_corners_mask[:, 1] += self.geometry['label_shape'][0] / 2.0
-        points_mask = get_points_in_a_rotated_box(label_corners_mask)
+        points_mask = get_points_in_a_rotated_box(label_corners_mask,
+                        xmax = self.geometry['label_shape'][1],
+                        ymax = self.geometry['label_shape'][0])
         for p in points_mask:
             label_x = p[0]
             label_y = p[1]
