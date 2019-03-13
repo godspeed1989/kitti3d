@@ -125,7 +125,11 @@ class Header(nn.Module):
             channels = input_channels
 
         self.clshead = conv1x1(channels, 1, bias=True)
-        self.reghead = conv1x1(channels, para.box_code_len, bias=True)
+        if para.estimate_zh:
+            self.reghead_bbox = conv1x1(channels, para.box_code_len-2, bias=True)
+            self.reghead_zh = conv1x1(channels, 2, bias=True)
+        else:
+            self.reghead = conv1x1(channels, para.box_code_len, bias=True)
         if para.estimate_dir:
             self.dirhead = conv1x1(channels, 1, bias=True)
 
@@ -142,7 +146,12 @@ class Header(nn.Module):
                 x = self.bn3(x)
 
         cls = torch.sigmoid(self.clshead(x))
-        reg = self.reghead(x)
+        if para.estimate_zh:
+            reg_bbox = self.reghead_bbox(x)
+            reg_zh = self.reghead_zh(x)
+            reg = torch.cat([reg_bbox, reg_zh], dim=1)
+        else:
+            reg = self.reghead(x)
 
         if para.estimate_dir:
             direct = torch.sigmoid(self.dirhead(x))
