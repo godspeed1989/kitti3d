@@ -79,10 +79,17 @@ def get_lidar_img(idx):
     bev = lidar_to_bev(scan)
     return bev
 
+def isint(s):
+    try:
+        int(s)
+        return True
+    except:
+        return False
+
 def line_to_poly(line):
     ret = []
     for s in line.split(' '):
-        if s.isnumeric():
+        if isint(s):
             ret.append(int(s))
     ret = np.array(ret, dtype=np.int32)
     return np.reshape(ret, [-1, 2])

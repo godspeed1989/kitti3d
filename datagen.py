@@ -480,10 +480,16 @@ class KITTI(Dataset):
                     return None
                 centers3d = sampled["boxes_centers3d"]
                 corners2d = lidar_center_to_corner_box3d(centers3d)[:,:4,:2]
+                def isint(s):
+                    try:
+                        int(s)
+                        return True
+                    except:
+                        return False
                 def line_to_poly(line):
                     ret = []
                     for s in line.split(' '):
-                        if s.isnumeric():
+                        if isint(s):
                             ret.append(int(s))
                     ret = np.array(ret, dtype=np.int32)
                     return np.reshape(ret, [-1, 2])
@@ -575,9 +581,9 @@ class KITTI(Dataset):
                 labelmap_mask_corners = point_transform(labelmap_mask_corners, 0, 0, 0, rz=angle)
         if np.random.choice(2):
             # global translation
-            tx = np.random.uniform(-1, 1)
-            ty = np.random.uniform(-1, 1)
-            tz = np.random.uniform(-0.15, 0.15)
+            tx = np.random.uniform(-0.5, 0.5)
+            ty = np.random.uniform(-0.5, 0.5)
+            tz = np.random.uniform(-0.05, 0.05)
             scan[:, 0:3] = point_transform(scan[:, 0:3], tx, ty, tz)
             if num_target > 0:
                 all_corners = point_transform(all_corners, tx, ty, tz)
