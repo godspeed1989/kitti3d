@@ -61,28 +61,35 @@ def plot_bev(velo_array, predict_list=None, label_list=None, window_name='GT'):
     val = 1 - val / (np.ptp(val) + 1e-5)
     intensity[:, :, :] = (val * 255).astype(np.uint8)
 
+    intensity1 = intensity.copy()
+    intensity2 = intensity.copy()
     if label_list is not None:
         for corners in label_list:
             plot_corners = corners / para.grid_sizeLW
             plot_corners[:, 1] += int(para.input_shape[0]//2)
             plot_corners = plot_corners.astype(int).reshape((-1, 1, 2))
-            cv2.polylines(intensity, [plot_corners], True, (0, 0, 255), 2)
-            cv2.line(intensity, tuple(plot_corners[2, 0]), tuple(plot_corners[3, 0]), (0, 255, 0), 2)
+            cv2.polylines(intensity1, [plot_corners], True, (0, 0, 255), 2)
+            cv2.line(intensity1, tuple(plot_corners[2, 0]), tuple(plot_corners[3, 0]), (0, 255, 0), 2)
     if predict_list is not None:
         for corners in predict_list:
             plot_corners = corners / para.grid_sizeLW
             plot_corners[:, 1] += int(para.input_shape[0]//2)
             plot_corners = plot_corners.astype(int).reshape((-1, 1, 2))
-            cv2.polylines(intensity, [plot_corners], True, (255, 255, 0), 2)
-            cv2.line(intensity, tuple(plot_corners[2, 0]), tuple(plot_corners[3, 0]), (255, 0, 0), 2)
+            cv2.polylines(intensity2, [plot_corners], True, (255, 255, 0), 2)
+            cv2.line(intensity2, tuple(plot_corners[2, 0]), tuple(plot_corners[3, 0]), (255, 0, 0), 2)
 
     # ipdb.set_trace()
-    intensity = intensity.astype(np.uint8)
+    intensity1 = intensity1.astype(np.uint8)
+    intensity2 = intensity2.astype(np.uint8)
     if intensity.shape[0] > 1000:
         scale = intensity.shape[0] / 800.0
         height, width = intensity.shape[:2]
         dsize = (int(width / scale), int(height / scale))
-        intensity = cv2.resize(intensity, dsize, interpolation=cv2.INTER_AREA)
+        intensity1 = cv2.resize(intensity1, dsize, interpolation=cv2.INTER_AREA)
+        intensity2 = cv2.resize(intensity2, dsize, interpolation=cv2.INTER_AREA)
+
+    alpha = 0.5
+    cv2.addWeighted(intensity1, alpha, intensity2, 1 - alpha, 0, intensity)
     cv2.imshow(window_name, intensity)
     cv2.imwrite(window_name+'.png', intensity)
 
