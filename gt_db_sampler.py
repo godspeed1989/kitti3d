@@ -232,7 +232,7 @@ class DBFilterByDifficulty(DataBasePreprocessing):
         return new_db_infos
 
 class DBFilterByMinNumPoint(DataBasePreprocessing):
-    def __init__(self, min_gt_point_dict={"Car": 5}):
+    def __init__(self, min_gt_point_dict={"Car": 10}):
         self._min_gt_point_dict = min_gt_point_dict
         print(min_gt_point_dict)
 
@@ -314,7 +314,7 @@ class DataBaseSampler:
         '''
             Input:
                 class_name 'Car'
-                gt_boxes (N, 8, 3) 
+                gt_boxes (N, 8, 3)
             Return:
                 lidar centers box 3d (N', 7)
         '''
@@ -342,21 +342,22 @@ class DataBaseSampler:
             }
         else:
             ret = None
-        
+
         # random rotate along z-axis
-        if ret is not None and False:
+        if ret is not None:
             r_boxes_centers3d_list = []
             r_points_list = []
             boxes_centers3d = ret["boxes_centers3d"].copy()
             for i, points in enumerate(s_points_list):
-                angle = np.random.uniform(-np.pi / 8, np.pi / 8)
+                angle = np.random.uniform(-np.pi / 12, np.pi / 12)
                 #
-                r_boxes_corners3d = lidar_center_to_corner_box3d(boxes_centers3d[[i],])[0]
+                r_boxes_corners3d = lidar_center_to_corner_box3d(boxes_centers3d[[i],])[0] #(8,3)
                 center = np.mean(r_boxes_corners3d[:, 0:3], axis=0)
                 r_boxes_corners3d = point_transform(r_boxes_corners3d - center, 0, 0, 0, rz=angle) + center
                 r_boxes_centers3d = corner_to_center_box3d(r_boxes_corners3d)
                 # TODO: just to call lidar_center_to_corner_box3d right
-                r_boxes_centers3d[6] = -r_boxes_centers3d[6] - np.pi/2
+                r_boxes_centers3d[6] = -r_boxes_centers3d[6]
+                r_boxes_centers3d[3:5] = r_boxes_centers3d[4:2:-1]
                 # convert from center-z to kitti bottom-z
                 r_boxes_centers3d[2] -= r_boxes_centers3d[5] / 2.0
                 r_boxes_centers3d_list.append(r_boxes_centers3d)
