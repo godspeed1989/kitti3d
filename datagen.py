@@ -17,7 +17,7 @@ from utils import (plot_bev, get_points_in_a_rotated_box, plot_label_map, trasfo
                    remove_points_in_boxes)
 from kitti import (read_label_obj, read_calib_file, compute_lidar_box_3d, lidar_center_to_corner_box3d,
                    corner_to_center_box3d, point_transform, angle_in_limit)
-from gt_db_sampler import DataBaseSampler, fake_boxes_corners3d
+from gt_db_sampler import DataBaseSampler
 from pointcloud2RGB import makeBVFeature
 from voxel_gen import VoxelGenerator
 
