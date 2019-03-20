@@ -609,6 +609,9 @@ class KITTI(Dataset):
                 labelmap_corners[:,1] = self.geometry['H2'] - labelmap_corners[:,1] + self.geometry['H1']
                 labelmap_mask_corners[:,1] = self.geometry['H2'] - labelmap_mask_corners[:,1] + self.geometry['H1']
 
+        jitter = np.random.randn(*scan.shape) * 1e-3
+        scan = scan + jitter
+
         ret_boxes_3d_corners = []
         ret_labelmap_boxes_3d_corners = []
         ret_labelmap_mask_boxes_3d_corners = []
