@@ -123,6 +123,45 @@ class Sequential(torch.nn.Module):
 
 #######################################################################################
 
+class SparseResBlock(spconv.SparseModule):
+    @staticmethod
+    def smconv3x3(in_planes, out_planes, stride=1, indice_key=None):
+        return spconv.SubMConv3d(in_planes, out_planes, kernel_size=3, stride=stride,
+                        padding=1, bias=False, indice_key=indice_key)
+
+    @ staticmethod
+    def smconv1x1(in_planes, out_planes, stride=1, indice_key=None):
+        return spconv.SubMConv3d(in_planes, out_planes, kernel_size=1, stride=stride,
+                        padding=1, bias=False, indice_key=indice_key)
+
+    def __init__(self, inplanes, planes, stride=1, downsample=None, indice_key=None):
+        super(SparseResBlock, self).__init__()
+        self.conv1 = self.smconv3x3(inplanes, planes, stride, indice_key=indice_key)
+        self.bn1 = nn.BatchNorm1d(planes)
+        self.relu = nn.ReLU()
+        self.conv2 = self.smconv3x3(planes, planes, indice_key=indice_key)
+        self.bn2 = nn.BatchNorm1d(planes)
+        self.downsample = downsample
+        self.stride = stride
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out.features = self.bn1(out.features)
+        out.features = self.relu(out.features)
+
+        out = self.conv2(out)
+        out.features = self.bn2(out.features)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out.features += identity.features
+        out.features = self.relu(out.features)
+
+        return out
+
 class SpMiddleFHD(nn.Module):
     def __init__(self,
                  dense_shape,
@@ -196,7 +235,7 @@ class SpMiddleFHD(nn.Module):
                 BatchNorm1d(64),
                 nn.ReLU(),
             )
-        elif self.ratio == 4:
+        elif self.ratio == 4 and para.sparse_res_middle_net == False:
             self.sparse_shape = np.array(dense_shape[1:4])
             # input: # [800, 700, 40]
             self.middle_conv = spconv.SparseSequential(
@@ -241,6 +280,59 @@ class SpMiddleFHD(nn.Module):
                 SpConv3d(128, 128, (2, 1, 1)),  # [200, 176, 3] -> [200, 176, 1]
                 BatchNorm1d(128),
                 nn.ReLU(),
+            )
+        elif self.ratio == 4 and para.sparse_res_middle_net == True:
+            self.sparse_shape = np.array(dense_shape[1:4])
+            # 1
+            middle_conv_head1 = spconv.SparseSequential(
+                SubMConv3d(para.voxel_feature_len, 32, 3, indice_key="subm0", dilation=1),
+                BatchNorm1d(32),
+                nn.ReLU()
+            )
+            middle_conv_res1 = SparseResBlock(32, 32, indice_key="subm0")
+            middle_conv_dsample1 = spconv.SparseSequential(
+                SpConv3d(32, 32, 3, 2, padding=1), # [800, 704, 40] -> [400, 352, 20]
+                BatchNorm1d(32),
+                nn.ReLU()
+            )
+            # 2
+            middle_conv_head2 = spconv.SparseSequential(
+                SubMConv3d(32, 64, 3, indice_key="subm1", dilation=1),
+                BatchNorm1d(64),
+                nn.ReLU()
+            )
+            middle_conv_res2 = SparseResBlock(64, 64, indice_key="subm1")
+            middle_conv_dsample2 = spconv.SparseSequential(
+                SpConv3d(64, 64, 3, 2, padding=1), # [400, 352, 20] -> [200, 176, 10]
+                BatchNorm1d(64),
+                nn.ReLU()
+            )
+            # 3
+            middle_conv3 = spconv.SparseSequential(
+                SpConv3d(128, 128, (3, 1, 1)),  # [200, 176, 10] -> [200, 176, 8]
+                BatchNorm1d(128),
+                nn.ReLU(),
+
+                SpConv3d(128, 128, (3, 1, 1)),  # [200, 176, 8] -> [200, 176, 6]
+                BatchNorm1d(128),
+                nn.ReLU(),
+
+                SpConv3d(128, 128, (3, 1, 1), stride=(2, 1, 1)),  # [200, 176, 6] -> [200, 176, 3]
+                BatchNorm1d(128),
+                nn.ReLU(),
+
+                SpConv3d(128, 128, (2, 1, 1)),  # [200, 176, 3] -> [200, 176, 1]
+                BatchNorm1d(128),
+                nn.ReLU()
+            )
+            self.middle_conv = spconv.SparseSequential(
+                middle_conv_head1,
+                middle_conv_res1,
+                middle_conv_dsample1,
+                middle_conv_head2,
+                middle_conv_res2,
+                middle_conv_dsample2,
+                middle_conv3
             )
         else:
             raise NotImplementedError
@@ -459,6 +551,21 @@ def test2():
     import torchviz
     g = torchviz.make_dot(cls.mean(), params=dict(model.named_parameters()))
     g.view()
+
+def test3():
+    if torch.cuda.is_available():
+        dev = 'cuda'
+    else:
+        dev = 'cpu'
+    voxels_feature, coords_pad, grid_size = _prepare_voxel(dev)
+
+    x = spconv.SparseConvTensor(voxels_feature, coords_pad, grid_size, batch_size=1)
+    print('input', x.spatial_shape)  # [704 800  40]
+    net = SparseResBlock(para.voxel_feature_len, para.voxel_feature_len, indice_key='k1').to(dev)
+    ret = net(x)
+    ret = ret.dense()
+    print(ret.size()) # [1, 4, 704, 800, 40]
+
 
 if __name__ == '__main__':
     fire.Fire()

@@ -68,6 +68,8 @@ def use_dense_net(sel):
         para.voxel_feature_len = 4
 use_dense_net(para.dense_net)
 
+para.sparse_res_middle_net = False
+
 para.label_shape = (200, 176)
 
 para.estimate_dir = False
