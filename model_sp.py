@@ -1,7 +1,7 @@
 import numpy as np
 import fire
 from collections import OrderedDict
-from copy import deepcopy
+from copy import deepcopy, copy
 import inspect
 import torch
 from torch import nn
@@ -153,9 +153,15 @@ class SparseInception(spconv.SparseModule):
         self.relu = nn.ReLU()
 
     def forward(self, x):
-        x0 = self.branch0(deepcopy(x))
-        x1 = self.branch1(deepcopy(x))
-        x2 = self.branch2(deepcopy(x))
+        x0 = copy(x)
+        x0.features = x.features.clone()
+        x0 = self.branch0(x0)
+        x1 = copy(x)
+        x1.features = x.features.clone()
+        x1 = self.branch1(x1)
+        x2 = copy(x)
+        x2.features = x.features.clone()
+        x2 = self.branch2(x2)
         x.features = torch.cat((x0.features, x1.features, x2.features), 1)
         out = self.agg_conv(x)
         out.features = self.relu(self.agg_bn(out.features))
@@ -173,7 +179,8 @@ class SparseResBlock(spconv.SparseModule):
         self.stride = stride
 
     def forward(self, x):
-        identity = deepcopy(x)
+        identity = copy(x)
+        identity.features = x.features.clone()
 
         out = self.conv1(x)
         out.features = self.bn1(out.features)
@@ -263,7 +270,7 @@ class SpMiddleFHD(nn.Module):
                 BatchNorm1d(64),
                 nn.ReLU(),
             )
-        elif self.ratio == 4 and para.sparse_res_middle_net == False:
+        elif self.ratio == 4 and para.sparse_res_middle_net == False and para.sparse_inception_middle_net == False:
             self.sparse_shape = np.array(dense_shape[1:4])
             # input: # [800, 700, 40]
             self.middle_conv = spconv.SparseSequential(
