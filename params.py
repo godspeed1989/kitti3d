@@ -69,6 +69,7 @@ def use_dense_net(sel):
 use_dense_net(para.dense_net)
 
 para.sparse_res_middle_net = False
+para.sparse_inception_middle_net = False
 
 para.label_shape = (200, 176)
 
