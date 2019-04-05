@@ -444,10 +444,9 @@ class KITTI(Dataset):
         return velo_processed
 
     def lidar_preprocess_sparse(self, velo):
-        # X,Y,Z  ->  Z,Y,X
         voxels, coords, num_points_per_voxel = self.voxel_generator.generate(velo.astype(np.float32))
-        voxels = voxels.astype(np.float32)      # (M, K, 4)
-        coords = coords.astype(np.int32)        # (M, 3)
+        voxels = voxels.astype(np.float32)      # (M, K, 4) X,Y,Z,I
+        coords = coords.astype(np.int32)        # (M, 3)    Z,Y,X
         num_points_per_voxel = num_points_per_voxel.astype(np.int32)    # (M,)
         # (M, C)
         if para.voxel_feature_len == 2:
@@ -455,6 +454,10 @@ class KITTI(Dataset):
         elif para.voxel_feature_len == 4:
             voxels_feature = voxels[:, :, :4].sum(axis=1, keepdims=False)
         voxels_feature = voxels_feature / num_points_per_voxel.astype(voxels.dtype)[..., np.newaxis]
+        #
+        if para.voxel_feature_len == 4:
+            voxels_center = coords * [para.grid_sizeH, para.grid_sizeLW, para.grid_sizeLW] + [para.H1, para.L1, para.W1]
+            voxels_feature[:, :3] = voxels_feature[:, :3] - voxels_center[:,::-1]
         return voxels_feature, coords
 
     def augment_data(self, index, scan, boxes_3d_corners,

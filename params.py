@@ -22,7 +22,7 @@ if para.sin_angle_loss:
 para.corner_loss = False
 para.corner_loss_start = 100
 
-para.estimate_zh = False
+para.estimate_zh = True
 if para.estimate_zh:  # append [z,h]
     para.box_code_len += 2 # 8, 7
     para.target_mean = np.resize(para.target_mean, para.box_code_len)
@@ -68,12 +68,12 @@ def use_dense_net(sel):
         para.voxel_feature_len = 4
 use_dense_net(para.dense_net)
 
-para.sparse_res_middle_net = False
+para.sparse_res_middle_net = True
 para.sparse_inception_middle_net = False
 
 para.label_shape = (200, 176)
 
-para.estimate_dir = False
+para.estimate_dir = True
 para.label_channels = 1 + para.box_code_len
 if para.estimate_dir:
     para.label_channels += 1
