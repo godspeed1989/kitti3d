@@ -168,7 +168,8 @@ class SparseInception(spconv.SparseModule):
         return out
 
 class SparseResBlock(spconv.SparseModule):
-    def __init__(self, inplanes, planes, stride=1, downsample=None, indice_key=None):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, indice_key=None,
+                    version=para.resnet_version):
         super(SparseResBlock, self).__init__()
         self.conv1 = smconv3x3(inplanes, planes, stride, indice_key=indice_key)
         self.bn1 = nn.BatchNorm1d(planes)
@@ -177,23 +178,41 @@ class SparseResBlock(spconv.SparseModule):
         self.bn2 = nn.BatchNorm1d(planes)
         self.downsample = downsample
         self.stride = stride
+        self.ver = version
 
     def forward(self, x):
         identity = copy(x)
         identity.features = x.features.clone()
 
-        out = self.conv1(x)
-        out.features = self.bn1(out.features)
-        out.features = self.relu(out.features)
+        if self.ver == 'v1':
+            out = self.conv1(x)
+            out.features = self.bn1(out.features)
+            out.features = self.relu(out.features)
 
-        out = self.conv2(out)
-        out.features = self.bn2(out.features)
+            out = self.conv2(out)
+            out.features = self.bn2(out.features)
 
-        if self.downsample is not None:
-            identity = self.downsample(x)
+            if self.downsample is not None:
+                identity = self.downsample(x)
 
-        out.features += identity.features
-        out.features = self.relu(out.features)
+            out.features += identity.features
+            out.features = self.relu(out.features)
+        elif self.ver == 'v2':
+            out = x
+            out.features = self.bn1(out.features)
+            out.features = self.relu(out.features)
+            out = self.conv1(out)
+
+            out.features = self.bn2(out.features)
+            out.features = self.relu(out.features)
+            out = self.conv2(out)
+
+            if self.downsample is not None:
+                identity = self.downsample(x)
+
+            out.features += identity.features
+        else:
+            raise NotImplementedError
 
         return out
 
