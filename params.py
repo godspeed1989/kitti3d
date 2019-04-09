@@ -65,7 +65,9 @@ def use_dense_net(sel):
             para.batch_size = 6
         para.net = 'PIXOR_SPARSE'
         para.channel_type = 'sparse'
+        # 2(z,i), 4(x,y,z,i), 32(sift)
         para.voxel_feature_len = 4
+        para.centroid_voxel_feature = False
 use_dense_net(para.dense_net)
 
 para.sparse_res_middle_net = True

@@ -448,16 +448,40 @@ class KITTI(Dataset):
         voxels = voxels.astype(np.float32)      # (M, K, 4) X,Y,Z,I
         coords = coords.astype(np.int32)        # (M, 3)    Z,Y,X
         num_points_per_voxel = num_points_per_voxel.astype(np.int32)    # (M,)
+        # (M, 3)
+        grid_size = np.array([para.grid_sizeH, para.grid_sizeLW, para.grid_sizeLW])
+        voxels_center = [para.H1, para.L1, para.W1] + coords * grid_size + 0.5 * grid_size
         # (M, C)
         if para.voxel_feature_len == 2:
             voxels_feature = voxels[:, :, 2:4].sum(axis=1, keepdims=False)
+            voxels_feature = voxels_feature / num_points_per_voxel.astype(voxels.dtype)[..., np.newaxis]
         elif para.voxel_feature_len == 4:
             voxels_feature = voxels[:, :, :4].sum(axis=1, keepdims=False)
-        voxels_feature = voxels_feature / num_points_per_voxel.astype(voxels.dtype)[..., np.newaxis]
-        #
-        if para.voxel_feature_len == 4:
-            voxels_center = coords * [para.grid_sizeH, para.grid_sizeLW, para.grid_sizeLW] + [para.H1, para.L1, para.W1]
-            voxels_feature[:, :3] = voxels_feature[:, :3] - voxels_center[:,::-1]
+            voxels_feature = voxels_feature / num_points_per_voxel.astype(voxels.dtype)[..., np.newaxis]
+            # centroid
+            if para.centroid_voxel_feature:
+                voxels_feature[:, :3] = voxels_feature[:, :3] - voxels_center[:,::-1]
+        elif para.voxel_feature_len == 32:
+            sift_features = []
+            for i,num in enumerate(num_points_per_voxel):
+                sift_feature = np.zeros((8, 4), dtype=np.float32)
+                for j in range(num):
+                    pt = voxels[i,j,:3] - voxels_center[i,::-1]
+                    if pt[0] > 0 and pt[1] > 0 and pt[2] > 0: k = 0
+                    elif pt[0] > 0 and pt[1] < 0 and pt[2] > 0: k = 1
+                    elif pt[0] > 0 and pt[1] > 0 and pt[2] < 0: k = 2
+                    elif pt[0] > 0 and pt[1] < 0 and pt[2] < 0: k = 3
+                    elif pt[0] < 0 and pt[1] > 0 and pt[2] > 0: k = 4
+                    elif pt[0] < 0 and pt[1] < 0 and pt[2] > 0: k = 5
+                    elif pt[0] < 0 and pt[1] > 0 and pt[2] < 0: k = 6
+                    elif pt[0] < 0 and pt[1] < 0 and pt[2] < 0: k = 7
+                    else: k = 0
+                    sift_feature[k,:3] += pt
+                    sift_feature[k, 3] += voxels[i,j,3]
+                sift_features.append(sift_feature.reshape(-1))
+            voxels_feature = np.stack(sift_features)
+        else:
+            raise NotImplementedError
         return voxels_feature, coords
 
     def augment_data(self, index, scan, boxes_3d_corners,
