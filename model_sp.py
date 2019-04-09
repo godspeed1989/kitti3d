@@ -544,13 +544,14 @@ class RPNV2(nn.Module):
 
         return cls, reg
 
-def voxel_feature_extractor(features, num_voxels):
+def voxel_feature_extractor(features, num_voxels, dev):
     # features: [concated_num_points, num_voxel_size, 3(4)]
     # num_voxels: [concated_num_points]
+    points_mean = torch.zeros([features.shape[0], para.voxel_feature_len]).to(dev)
     if para.voxel_feature_len == 2:
-        points_mean = features[:, :, 2:4].sum(dim=1, keepdim=False) / num_voxels.type_as(features).view(-1, 1)
-    elif para.voxel_feature_len == 4:
-        points_mean = features[:, :, :4].sum(dim=1, keepdim=False) / num_voxels.type_as(features).view(-1, 1)
+        points_mean[:, :2] = features[:, :, 2:4].sum(dim=1, keepdim=False) / num_voxels.type_as(features).view(-1, 1)
+    else:
+        points_mean[:, :4] = features[:, :, :4].sum(dim=1, keepdim=False) / num_voxels.type_as(features).view(-1, 1)
     return points_mean.contiguous()
 
 class PIXOR_SPARSE(nn.Module):
@@ -607,7 +608,7 @@ def _prepare_voxel(dev):
     voxels = torch.tensor(voxels, dtype=torch.float32, device=dev)       # (M, K, 4)
     coords_pad = torch.tensor(coords_pad, dtype=torch.int32, device=dev) # (M, 3+1)
     num_points = torch.tensor(num_points, dtype=torch.int32, device=dev) # (M,)
-    voxels_feature = voxel_feature_extractor(voxels, num_points) # (M, C)
+    voxels_feature = voxel_feature_extractor(voxels, num_points, dev) # (M, C)
     grid_size = voxel_generator.grid_size
 
     return voxels_feature, coords_pad, grid_size
