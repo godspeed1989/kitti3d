@@ -93,6 +93,7 @@ if para.channel_type == 'sparse':
     para.input_channels = -1
 
 para.object_list = ['Car']
+para.collision_object_list = ['Car', 'Van', 'Truck', 'Pedestrian', 'Cyclist']
 
 para.box_in_labelmap_ratio = 0.6
 para.use_labelmap_mask = False
@@ -112,4 +113,5 @@ para.filter_sampled_by_ground = True
 para.augment_max_samples = 15
 para.remove_points_after_sample = False
 
-para.filter_bad_targets = False
+para.filter_bad_targets = True
+para.minimum_target_points = 40

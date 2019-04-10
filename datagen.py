@@ -14,7 +14,7 @@ from collections import defaultdict
 
 from params import para
 from utils import (plot_bev, get_points_in_a_rotated_box, plot_label_map, trasform_label2metric,
-                   remove_points_in_boxes)
+                   remove_points_in_boxes, points_in_convex_polygon_3d_jit, corner_to_surfaces_3d)
 from kitti import (read_label_obj, read_calib_file, compute_lidar_box_3d, lidar_center_to_corner_box3d,
                    corner_to_center_box3d, point_transform, angle_in_limit)
 from gt_db_sampler import DataBaseSampler
@@ -86,26 +86,27 @@ class KITTI(Dataset):
 
     def __getitem__(self, item):
         ret = {}
+        # scan
         raw_scan = self.load_velo_scan(item)
-
-        if self.selection == 'test':
-            assert self.aug_data == False
-            index, calib_dict = self.get_label(item)
-            raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, \
-                raw_labelmap_mask_boxes_3d_corners = None, None, None
-        else:
-            index, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, \
-                raw_labelmap_mask_boxes_3d_corners, calib_dict = self.get_label(item)
-
-        if self.align_pc_with_img:
-            raw_scan = self.align_img_and_pc(raw_scan, calib_dict)
-
         if self.crop_pc_by_fov:
             raw_scan = self.crop_pc_using_fov(raw_scan)
 
+        if self.selection == 'test':
+            assert self.aug_data == False
+            index, calib_dict = self.get_label(raw_scan, item)
+            raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, \
+                raw_labelmap_mask_boxes_3d_corners, collision_boxes_3d_corners = None, None, None, None
+        else:
+            index, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, \
+                raw_labelmap_mask_boxes_3d_corners, collision_boxes_3d_corners, \
+                    calib_dict = self.get_label(raw_scan, item)
+        if self.align_pc_with_img:
+            raw_scan = self.align_img_and_pc(raw_scan, calib_dict)
+
         if self.aug_data:
             scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners = \
-                self.augment_data(index, raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, raw_labelmap_mask_boxes_3d_corners)
+                self.augment_data(index, raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, \
+                    raw_labelmap_mask_boxes_3d_corners, collision_boxes_3d_corners)
         else:
             scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners = \
                 raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, raw_labelmap_mask_boxes_3d_corners
@@ -274,7 +275,7 @@ class KITTI(Dataset):
             label_y = p[1]
             map_mask[label_y, label_x] = 0.5
 
-    def get_label(self, idx):
+    def get_label(self, scan, idx):
         '''
         :param i: the ith velodyne scan in the train/val set
         '''
@@ -287,9 +288,15 @@ class KITTI(Dataset):
         if self.selection == 'test':
             return index, calib_dict
 
-        def obj_good_to_train(obj):
+        def obj_good_to_train(scan, obj, calib_dict):
             if para.filter_bad_targets:
-                return np.sqrt(obj.t[0]**2 + obj.t[2]**2) < 50
+                box3d_corners = compute_lidar_box_3d(obj,
+                    calib_dict['R0_rect'].reshape([3,3]),
+                    calib_dict['Tr_velo_to_cam'].reshape([3,4]))
+                surfaces = corner_to_surfaces_3d(box3d_corners[np.newaxis, ...])
+                indices = points_in_convex_polygon_3d_jit(scan[:,:3], surfaces)
+                pt_cnt = np.sum(indices)
+                return pt_cnt > para.minimum_target_points
             else:
                 return True
 
@@ -297,8 +304,9 @@ class KITTI(Dataset):
         boxes3d_corners = []
         labelmap_boxes3d_corners = []
         labelmap_mask_boxes3d_corners = []
+        collision_boxes_3d_corners = []
         for obj in objs:
-            if obj.type in para.object_list and obj_good_to_train(obj):
+            if obj.type in para.object_list and obj_good_to_train(scan, obj, calib_dict):
                 # use calibration to get accurate position (8, 3)
                 box3d_corners = compute_lidar_box_3d(obj,
                     calib_dict['R0_rect'].reshape([3,3]),
@@ -322,7 +330,13 @@ class KITTI(Dataset):
                     calib_dict['R0_rect'].reshape([3,3]),
                     calib_dict['Tr_velo_to_cam'].reshape([3,4]))
                 labelmap_mask_boxes3d_corners.append(labelmap_mask_box3d_corners)
-        return index, boxes3d_corners, labelmap_boxes3d_corners, labelmap_mask_boxes3d_corners, calib_dict
+            if obj.type in para.collision_object_list:
+                box3d_corners = compute_lidar_box_3d(obj,
+                    calib_dict['R0_rect'].reshape([3,3]),
+                    calib_dict['Tr_velo_to_cam'].reshape([3,4]))
+                collision_boxes_3d_corners.append(box3d_corners)
+        return index, boxes3d_corners, labelmap_boxes3d_corners, labelmap_mask_boxes3d_corners, \
+                collision_boxes_3d_corners, calib_dict
 
     def get_reg_targets(self, box3d_pts_3d):
         # (8,3) -> (box_code_len)
@@ -485,7 +499,8 @@ class KITTI(Dataset):
         return voxels_feature, coords
 
     def augment_data(self, index, scan, boxes_3d_corners,
-                     labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners):
+                     labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners,
+                     collision_boxes_3d_corners):
         assert len(boxes_3d_corners) == len(labelmap_boxes_3d_corners)
         assert len(boxes_3d_corners) == len(labelmap_mask_boxes_3d_corners)
         if len(boxes_3d_corners) > 0:
@@ -499,7 +514,7 @@ class KITTI(Dataset):
             labelmap_mask_corners = np.zeros([0,8,3])
 
         if para.augment_data_use_db:
-            collision_corners = all_corners
+            collision_corners = np.stack(collision_boxes_3d_corners)
             sampled = self.sampler.sample_all('Car', collision_corners, para.augment_max_samples)
             # ----
             def filter_by_ground(sampled, index):
@@ -586,7 +601,7 @@ class KITTI(Dataset):
                 if para.remove_points_after_sample:
                     boxes_corners3d = sampled_boxes_corners3d.copy()
                     # just to call points_in_convex_polygon_3d_jit correct
-                    boxes_corners3d = boxes_corners3d[:,(0,3,2,1,4,7,6,5),:]
+                    # boxes_corners3d = boxes_corners3d[:,(0,3,2,1,4,7,6,5),:]
                     boxes_corners3d[:,:4,2] = -10
                     boxes_corners3d[:,4:,2] = 10
                     scan, _ = remove_points_in_boxes(scan, boxes_corners3d)
@@ -701,22 +716,25 @@ def get_data_loader(db_selection, batch_size=4,
 
 def test0():
     k = KITTI(selection='train')
-    for id in range(len(k)):
-        k.load_velo()
+    k.load_velo()
+    special = [34, 44, 47, 16]
+    for id in special+list(range(len(k))):
         tstart = time.time()
         scan = k.load_velo_scan(id)
         index, boxes_3d_corners, labelmap_boxes_3d_corners, \
-            labelmap_mask_boxes_3d_corners, calib_dict = k.get_label(id)
+            labelmap_mask_boxes_3d_corners, collision_boxes_3d_corners, \
+                calib_dict = k.get_label(scan, id)
         if k.align_pc_with_img:
             scan = k.align_img_and_pc(scan, calib_dict)
         if k.crop_pc_by_fov:
             scan = k.crop_pc_using_fov(scan)
         scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners = \
-            k.augment_data(index, scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners)
+            k.augment_data(index, scan, boxes_3d_corners, labelmap_boxes_3d_corners, \
+                labelmap_mask_boxes_3d_corners, collision_boxes_3d_corners)
         label_map, label_list, label_map_mask = \
             k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners)
         RGB_Map = k.lidar_preprocess_rgb(scan)
-        print('time taken: %gs' %(time.time()-tstart))
+        print('%d time taken: %gs' % (id, time.time()-tstart))
         plot_bev(RGB_Map, label_list=label_list)
         plot_label_map(label_map[:, :, :3])
         plot_label_map(label_map_mask)
@@ -726,8 +744,9 @@ def find_reg_target_var_and_mean():
     k.load_velo()
     reg_targets = [[] for _ in range(para.box_code_len)]
     for i in range(len(k)):
+        scan = k.load_velo_scan(i)
         _, boxes_3d_corners, labelmap_boxes_3d_corners, \
-            labelmap_mask_boxes_3d_corners, _ = k.get_label(i)
+            labelmap_mask_boxes_3d_corners, _, _ = k.get_label(scan, i)
         label_map, _, _ = k.get_label_map(boxes_3d_corners, \
             labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners)
         car_locs = np.where(label_map[:, :, 0] == 1)
