@@ -70,6 +70,8 @@ def use_dense_net(sel):
         para.centroid_voxel_feature = False
 use_dense_net(para.dense_net)
 
+para.rpn_ver = 'v2'
+
 para.sparse_res_middle_net = True
 para.resnet_version = 'v1'
 para.sparse_inception_middle_net = False

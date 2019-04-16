@@ -544,6 +544,141 @@ class RPNV2(nn.Module):
 
         return cls, reg
 
+class ResBlock(nn.Module):
+    def __init__(self, inplanes, planes, stride=1, downsample=None,
+                 version=para.resnet_version):
+        super(ResBlock, self).__init__()
+        self.conv1 = nn.Conv2d(inplanes, planes, 3, stride=1, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.relu = nn.ReLU()
+        self.conv2 = nn.Conv2d(inplanes, planes, 3, stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.downsample = downsample
+        self.stride = stride
+        self.ver = version
+
+    def forward(self, x):
+        identity = x
+
+        if self.ver == 'v1':
+            out = self.conv1(x)
+            out = self.bn1(out)
+            out = self.relu(out)
+
+            out = self.conv2(out)
+            out = self.bn2(out)
+
+            if self.downsample is not None:
+                identity = self.downsample(x)
+
+            out += identity
+            out = self.relu(out)
+        elif self.ver == 'v2':
+            out = self.bn1(x)
+            out = self.relu(out)
+            out = self.conv1(out)
+
+            out = self.bn2(out)
+            out = self.relu(out)
+            out = self.conv2(out)
+
+            if self.downsample is not None:
+                identity = self.downsample(x)
+
+            out += identity
+        else:
+            raise NotImplementedError
+
+        return out
+
+class RPNV3(nn.Module):
+    """Resblock rpn
+    """
+    def __init__(self,
+                 use_norm=True,
+                 decode=False,
+                 num_class=1,
+                 layer_nums=[5, 5],
+                 layer_strides=[1, 2],
+                 num_filters=[128, 256],
+                 upsample_strides=[1, 2],
+                 num_upsample_filters=[256, 256],
+                 num_input_features=128,
+                 name='rpnv3'):
+        super(RPNV3, self).__init__()
+
+        assert len(layer_strides) == len(layer_nums)
+        assert len(num_filters) == len(layer_nums)
+        assert len(upsample_strides) == len(layer_nums)
+        assert len(num_upsample_filters) == len(layer_nums)
+
+        if use_norm:
+            BatchNorm2d = change_default_args(eps=1e-3, momentum=0.01)(nn.BatchNorm2d)
+            Conv2d = change_default_args(bias=False)(nn.Conv2d)
+            ConvTranspose2d = change_default_args(bias=False)(nn.ConvTranspose2d)
+        else:
+            BatchNorm2d = Empty
+            Conv2d = change_default_args(bias=True)(nn.Conv2d)
+            ConvTranspose2d = change_default_args(bias=True)(nn.ConvTranspose2d)
+
+        in_filters = [num_input_features, *num_filters[:-1]]
+        # note that when stride > 1, conv2d with same padding isn't
+        # equal to pad-conv2d. we should use pad-conv2d.
+        blocks = []
+        deblocks = []
+
+        for i, layer_num in enumerate(layer_nums):
+            block = Sequential(
+                nn.ZeroPad2d(1),
+                Conv2d(in_filters[i], num_filters[i], 3, stride=layer_strides[i]),
+                BatchNorm2d(num_filters[i]),
+                nn.ReLU(),
+            )
+            for j in range(layer_num):
+                block.add(ResBlock(num_filters[i], num_filters[i]))
+            blocks.append(block)
+            deblock = Sequential(
+                ConvTranspose2d(
+                    num_filters[i],
+                    num_upsample_filters[i],
+                    upsample_strides[i],
+                    stride=upsample_strides[i]),
+                BatchNorm2d(num_upsample_filters[i]),
+                nn.ReLU(),
+            )
+            deblocks.append(deblock)
+        self.blocks = nn.ModuleList(blocks)
+        self.deblocks = nn.ModuleList(deblocks)
+
+        self.header = Header(input_channels=sum(num_upsample_filters), use_bn=use_norm)
+
+    def forward(self, x, bev=None):
+        ups = []
+        for i in range(len(self.blocks)):
+            x = self.blocks[i](x)
+            ups.append(self.deblocks[i](x))
+
+        if len(ups) > 1:
+            x = torch.cat(ups, dim=1)
+        else:
+            x = ups[0]
+
+        if para.estimate_dir:
+            cls, reg, direct = self.header(x)
+            reg = torch.cat([reg, direct], dim=1)
+        else:
+            cls, reg = self.header(x)
+
+        return cls, reg
+
+def get_rpn(use_bn=True):
+    if para.rpn_ver == 'v2':
+        return RPNV2(use_norm=use_bn)
+    elif para.rpn_ver == 'v3':
+        return RPNV3(use_norm=use_bn)
+    else:
+        raise NotImplementedError
+
 def voxel_feature_extractor(features, num_voxels, dev):
     # features: [concated_num_points, num_voxel_size, 3(4)]
     # num_voxels: [concated_num_points]
@@ -562,7 +697,7 @@ class PIXOR_SPARSE(nn.Module):
         print('full_shape', full_shape)
         dense_shape = [1] + full_shape[::-1].tolist() + [num_input_features]
         self.middle_feature_extractor = SpMiddleFHD(dense_shape, ratio, use_norm=use_bn)
-        self.rpn = RPNV2(use_norm=use_bn)
+        self.rpn = get_rpn(use_bn)
         self.corner_decoder = Decoder()
 
     def set_decode(self, decode):
@@ -629,7 +764,7 @@ def test():
     dense_map = middle_feature_extractor(voxels_feature, coords_pad, batch_size_dev)
     print('dense_map', dense_map.size())
 
-    rpn = RPNV2().to(dev)
+    rpn = get_rpn().to(dev)
     cls, reg = rpn(dense_map)
     print('rpn_ret', cls.size(), reg.size())
 
@@ -653,7 +788,7 @@ def test2():
         dev = 'cuda'
     else:
         dev = 'cpu'
-    model = RPNV2().to(dev)
+    model = get_rpn().to(dev)
     x = torch.autograd.Variable(torch.randn(5, 128, 200, 176)).to(dev)
     cls, reg = model(x)
     import torchviz
