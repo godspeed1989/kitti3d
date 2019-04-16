@@ -6,7 +6,6 @@ import cv2
 import fire
 import numpy as np
 import time
-import re
 import torch
 from copy import deepcopy
 from torch.utils.data import Dataset, DataLoader
@@ -691,11 +690,13 @@ def _merge_batch(batch_list, _unused=False):
                     constant_values=i)
                 coors.append(coor_pad)
             ret[key] = np.concatenate(coors, axis=0)
+        elif key == 'raw_scan':
+            ret[key] = elems
         else:
             # [A,B] + [A,B] -> [2,A,B]
             ret[key] = np.stack(elems, axis=0)
     for k,v in ret.items():
-        if not bool(re.match(r"raw_*", k)):
+        if k != 'raw_scan':
             ret[k] = torch.from_numpy(v)
     ret['cur_batch_size'] = len(batch_list)
     return ret
