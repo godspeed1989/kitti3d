@@ -262,7 +262,7 @@ def eval_net(config_name, device):
         net_input = _get_net_input(data, device, 1)
         # label_list [N,4,2]
         index, boxes_3d_corners, labelmap_boxes3d_corners, labelmap_mask_boxes3d_corners, \
-            _, calib_dict = loader.dataset.get_label(data['scan'], image_id)
+            _, calib_dict = loader.dataset.get_label(data['raw_scan'][0], image_id)
         print('---{}---'.format(index))
         _, label_list, _ = loader.dataset.get_label_map(boxes_3d_corners, \
                 labelmap_boxes3d_corners, labelmap_mask_boxes3d_corners)
@@ -284,9 +284,9 @@ def dump_net(config_name, device, db_selection):
     for image_id, data in enumerate(loader):
         net_input = _get_net_input(data, device, 1)
         if db_selection == 'test':
-            index, calib_dict = loader.dataset.get_label(data['scan'], image_id)
+            index, calib_dict = loader.dataset.get_label(data['raw_scan'][0], image_id)
         else:
-            index, _, _, _, _, calib_dict = loader.dataset.get_label(data['scan'], image_id)
+            index, _, _, _, _, calib_dict = loader.dataset.get_label(data['raw_scan'][0], image_id)
         lines = eval_one_sample(net, net_input, config, label_list=None,
                                 vis=False, to_kitti_file=True, calib_dict=calib_dict)
         txt_file = os.path.join(db_selection, index + '.txt')

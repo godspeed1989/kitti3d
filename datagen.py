@@ -6,6 +6,7 @@ import cv2
 import fire
 import numpy as np
 import time
+import re
 import torch
 from copy import deepcopy
 from torch.utils.data import Dataset, DataLoader
@@ -90,6 +91,7 @@ class KITTI(Dataset):
         raw_scan = self.load_velo_scan(item)
         if self.crop_pc_by_fov:
             raw_scan = self.crop_pc_using_fov(raw_scan)
+        ret['raw_scan'] = raw_scan
 
         if self.selection == 'test':
             assert self.aug_data == False
@@ -693,7 +695,8 @@ def _merge_batch(batch_list, _unused=False):
             # [A,B] + [A,B] -> [2,A,B]
             ret[key] = np.stack(elems, axis=0)
     for k,v in ret.items():
-        ret[k] = torch.from_numpy(v)
+        if not bool(re.match(r"raw_*", k)):
+            ret[k] = torch.from_numpy(v)
     ret['cur_batch_size'] = len(batch_list)
     return ret
 

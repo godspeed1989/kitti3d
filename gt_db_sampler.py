@@ -232,7 +232,7 @@ class DBFilterByDifficulty(DataBasePreprocessing):
         return new_db_infos
 
 class DBFilterByMinNumPoint(DataBasePreprocessing):
-    def __init__(self, min_gt_point_dict={"Car": 65}):
+    def __init__(self, min_gt_point_dict={"Car": 16}):
         self._min_gt_point_dict = min_gt_point_dict
         print(min_gt_point_dict)
 

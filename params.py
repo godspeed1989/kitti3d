@@ -114,4 +114,4 @@ para.augment_max_samples = 15
 para.remove_points_after_sample = False
 
 para.filter_bad_targets = True
-para.minimum_target_points = 40
+para.minimum_target_points = 10
