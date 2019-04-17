@@ -598,7 +598,7 @@ class RPNV3(nn.Module):
                  use_norm=True,
                  decode=False,
                  num_class=1,
-                 layer_nums=[5, 5],
+                 layer_nums=[3, 3],
                  layer_strides=[1, 2],
                  num_filters=[128, 256],
                  upsample_strides=[1, 2],
