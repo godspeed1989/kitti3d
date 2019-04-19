@@ -544,6 +544,19 @@ class RPNV2(nn.Module):
 
         return cls, reg
 
+def test_transpose_conv():
+    ConvTranspose2d = change_default_args(bias=True)(nn.ConvTranspose2d)
+    if torch.cuda.is_available():
+        dev = 'cuda'
+    else:
+        dev = 'cpu'
+    upsample_strides = 1
+    net = ConvTranspose2d(2, 4, upsample_strides, stride=upsample_strides).to(dev)
+    print(net(torch.rand(3, 2, 300, 200).to(dev)).size())  # x1
+    upsample_strides = 2
+    net = ConvTranspose2d(2, 4, upsample_strides, stride=upsample_strides).to(dev)
+    print(net(torch.rand(3, 2, 300, 200).to(dev)).size())  # x2
+
 class ResBlock(nn.Module):
     def __init__(self, inplanes, planes, stride=1, downsample=None,
                  version=para.resnet_version):
