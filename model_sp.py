@@ -605,7 +605,7 @@ class ResBlock(nn.Module):
         return out
 
 class Res2NetBlock(nn.Module):
-    def __init__(self, planes, scale=2, stride=1, groups=1, norm_layer=None):
+    def __init__(self, planes, scale=4, stride=1, groups=1, norm_layer=None):
         super(Res2NetBlock, self).__init__()
 
         self.relu = nn.ReLU(inplace=True)
@@ -691,7 +691,7 @@ class RPNV3(nn.Module):
             )
             for j in range(layer_num):
                 #block.add(ResBlock(num_filters[i], num_filters[i]))
-                block.add(Res2NetBlock(num_filters[i], num_filters[i]))
+                block.add(Res2NetBlock(num_filters[i]))
             blocks.append(block)
             deblock = Sequential(
                 ConvTranspose2d(
