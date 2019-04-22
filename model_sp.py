@@ -604,6 +604,48 @@ class ResBlock(nn.Module):
 
         return out
 
+class Res2NetBlock(nn.Module):
+    def __init__(self, planes, scale=2, stride=1, groups=1, norm_layer=None):
+        super(Res2NetBlock, self).__init__()
+
+        self.relu = nn.ReLU(inplace=True)
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+
+        self.scale = scale
+        ch_per_sub = planes // self.scale
+        ch_res = planes % self.scale
+        self.chunks = [ch_per_sub * i + ch_res for i in range(1, scale + 1)]
+        self.conv_blocks = self._make_sub_convs(ch_per_sub, norm_layer, stride, groups)
+
+    def forward(self, x):
+        sub_convs = []
+        sub_convs.append(x[:, :self.chunks[0]])
+        sub_convs.append(self.conv_blocks[0](x[:, self.chunks[0]: self.chunks[1]]))
+        for s in range(2, self.scale):
+            sub_x = x[:, self.chunks[s - 1]: self.chunks[s]]
+            sub_x += sub_convs[-1]
+            sub_convs.append(self.conv_blocks[s - 1](sub_x))
+
+        return torch.cat(sub_convs, dim=1)
+
+    def _make_sub_convs(self, ch_per_sub, norm_layer, stride, groups):
+        layers = []
+        for s in range(1, self.scale):
+            layers.append(nn.Sequential(
+                nn.Conv2d(ch_per_sub, ch_per_sub, kernel_size=3, stride=stride,
+                          padding=1, groups=groups, bias=False),
+                norm_layer(ch_per_sub), self.relu))
+        return nn.Sequential(*layers)
+
+def test_Res2NetBlock():
+    if torch.cuda.is_available():
+        dev = 'cuda'
+    else:
+        dev = 'cpu'
+    net = Res2NetBlock(32).to(dev)
+    print(net(torch.rand(3, 32, 100, 200).to(dev)).size())
+
 class RPNV3(nn.Module):
     """Resblock rpn
     """
@@ -648,7 +690,8 @@ class RPNV3(nn.Module):
                 nn.ReLU(),
             )
             for j in range(layer_num):
-                block.add(ResBlock(num_filters[i], num_filters[i]))
+                #block.add(ResBlock(num_filters[i], num_filters[i]))
+                block.add(Res2NetBlock(num_filters[i], num_filters[i]))
             blocks.append(block)
             deblock = Sequential(
                 ConvTranspose2d(
