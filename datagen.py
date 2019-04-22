@@ -17,7 +17,7 @@ from utils import (plot_bev, get_points_in_a_rotated_box, plot_label_map, trasfo
                    remove_points_in_boxes, points_in_convex_polygon_3d_jit, corner_to_surfaces_3d)
 from kitti import (read_label_obj, read_calib_file, compute_lidar_box_3d, lidar_center_to_corner_box3d,
                    corner_to_center_box3d, point_transform, angle_in_limit)
-from gt_db_sampler import DataBaseSampler
+from gt_db_sampler import DataBaseSampler, get_road_plane, move_samples_to_road_plane
 from pointcloud2RGB import makeBVFeature
 from voxel_gen import VoxelGenerator
 
@@ -107,7 +107,7 @@ class KITTI(Dataset):
         if self.aug_data:
             scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners = \
                 self.augment_data(index, raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, \
-                    raw_labelmap_mask_boxes_3d_corners, collision_boxes_3d_corners)
+                    raw_labelmap_mask_boxes_3d_corners, collision_boxes_3d_corners, calib_dict)
         else:
             scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners = \
                 raw_scan, raw_boxes_3d_corners, raw_labelmap_boxes_3d_corners, raw_labelmap_mask_boxes_3d_corners
@@ -501,7 +501,7 @@ class KITTI(Dataset):
 
     def augment_data(self, index, scan, boxes_3d_corners,
                      labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners,
-                     collision_boxes_3d_corners):
+                     collision_boxes_3d_corners, calib_dict):
         assert len(boxes_3d_corners) == len(labelmap_boxes_3d_corners)
         assert len(boxes_3d_corners) == len(labelmap_mask_boxes_3d_corners)
         if len(boxes_3d_corners) > 0:
@@ -584,6 +584,9 @@ class KITTI(Dataset):
             if para.filter_sampled_by_ground:
                 sampled = filter_by_ground(sampled, index)
             if sampled is not None:
+                if para.move_sampled_to_road_plane:
+                    road_plane = get_road_plane(os.path.join(KITTI_PATH, 'training/planes', '%s.txt' % index))
+                    sampled = move_samples_to_road_plane(sampled, road_plane, calib_dict)
                 sampled_boxes_centers3d = sampled["boxes_centers3d"].copy()
                 # gt
                 sampled_boxes_corners3d = lidar_center_to_corner_box3d(sampled_boxes_centers3d)
@@ -734,7 +737,7 @@ def test0():
             scan = k.crop_pc_using_fov(scan)
         scan, boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners = \
             k.augment_data(index, scan, boxes_3d_corners, labelmap_boxes_3d_corners, \
-                labelmap_mask_boxes_3d_corners, collision_boxes_3d_corners)
+                labelmap_mask_boxes_3d_corners, collision_boxes_3d_corners, calib_dict)
         label_map, label_list, label_map_mask = \
             k.get_label_map(boxes_3d_corners, labelmap_boxes_3d_corners, labelmap_mask_boxes_3d_corners)
         RGB_Map = k.lidar_preprocess_rgb(scan)

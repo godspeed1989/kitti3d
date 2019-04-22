@@ -370,8 +370,93 @@ class DataBaseSampler:
         return ret
 
 
-fake_boxes = np.array([[0,0,-1,5,5,3,0]])
-fake_boxes_corners3d = lidar_center_to_corner_box3d(fake_boxes)
+import os
+from kitti import read_calib_file, read_label_obj, compute_lidar_box_3d, reorg_calib_dict
+index = '000044'
+KITTI_PATH = '/mine/KITTI_DAT/training'
+
+def _get_gt():
+    f_name = index + '.txt'
+    label_path = os.path.join(KITTI_PATH, 'label_2', f_name)
+    calib_path = os.path.join(KITTI_PATH, 'calib', f_name)
+    calib_dict = read_calib_file(calib_path)
+    objs = read_label_obj(label_path)
+
+    gt_boxes_corners3d = []
+    for obj in objs:
+        if obj.type in ['Car']:
+            box3d_corners = compute_lidar_box_3d(obj,
+                calib_dict['R0_rect'].reshape([3,3]),
+                calib_dict['Tr_velo_to_cam'].reshape([3,4]))
+            gt_boxes_corners3d.append(box3d_corners)
+    gt_boxes_corners3d = np.stack(gt_boxes_corners3d)
+    return gt_boxes_corners3d
+
+def _get_calib_dict(idx):
+    calib_path = os.path.join(KITTI_PATH, 'calib', '%s.txt' % idx)
+    calib_dict = read_calib_file(calib_path)
+    return calib_dict
+
+def get_road_plane(plane_file_path):
+    with open(plane_file_path, 'r') as f:
+        lines = f.readlines()
+    lines = [float(i) for i in lines[3].split()]
+    plane = np.asarray(lines)
+
+    # Ensure normal is always facing up, this is in the rectified camera coordinate
+    if plane[1] > 0:
+        plane = -plane
+
+    norm = np.linalg.norm(plane[0:3])
+    plane = plane / norm
+    return plane
+
+def _lidar_to_camera(pts, T_VELO_2_CAM, R_RECT_0):
+    # pts [N,3]
+    N = pts.shape[0]
+    p = np.concatenate([pts, np.ones([N,1])], axis=1).T
+    p = np.matmul(T_VELO_2_CAM, p)
+    p = np.matmul(R_RECT_0, p)
+    p = p[0:3]
+    return p.T
+
+def camera_to_lidar(pts, T_VELO_2_CAM, R_RECT_0):
+    # pts [N,3]
+    N = pts.shape[0]
+    p = np.concatenate([pts, np.ones([N,1])], axis=1).T
+    p = np.matmul(np.linalg.inv(R_RECT_0), p)
+    p = np.matmul(np.linalg.inv(T_VELO_2_CAM), p)
+    p = p[0:3]
+    return p.T
+
+def move_samples_to_road_plane(sampled_dict, road_plane, calib_dict):
+    a, b, c, d = road_plane
+    P, Tr_velo_to_cam, R_cam_to_rect = reorg_calib_dict(calib_dict)
+    new_centers = []
+    new_points = []
+    for i in range(len(sampled_dict['points'])):
+        new_center = sampled_dict['boxes_centers3d'][i].copy()
+        new_point = sampled_dict['points'][i].copy()
+        # lidar to camera
+        cam_center = _lidar_to_camera(new_center[np.newaxis, :3], Tr_velo_to_cam, R_cam_to_rect)[0]
+        cam_points = _lidar_to_camera(new_point[:,:3], Tr_velo_to_cam, R_cam_to_rect)
+        # put it on the road plane
+        cur_height = (-d - a * cam_center[0] - c * cam_center[2]) / b
+        move_height = cam_center[1] - cur_height
+        cam_center[1] -= move_height
+        cam_points[:, 1] -= move_height
+        # camera to lidar
+        lidar_center = camera_to_lidar(cam_center[np.newaxis, ...], Tr_velo_to_cam, R_cam_to_rect)[0]
+        lidar_center = np.concatenate([lidar_center, new_center[3:]])
+        lidar_point = camera_to_lidar(cam_points, Tr_velo_to_cam, R_cam_to_rect)
+        lidar_point = np.concatenate([lidar_point, new_point[:,3:4]], axis=1)
+        # put it back
+        new_centers.append(lidar_center)
+        new_points.append(lidar_point)
+
+    sampled_dict['boxes_centers3d'] = np.stack(new_centers, axis=0)
+    sampled_dict['points'] = new_points
+    return sampled_dict
 
 if __name__ == '__main__':
     sampler = DataBaseSampler(root_path, database_info_path)
@@ -381,14 +466,20 @@ if __name__ == '__main__':
     # test2
     samples_points = sampler.load_sample_points(samples)
     # test3
-    sampled = sampler.sample_all('Car', fake_boxes_corners3d)
+    gt_boxes_corners3d = _get_gt()
+    sampled = sampler.sample_all('Car', gt_boxes_corners3d)
     if sampled is not None:
         for i in range(len(sampled["names"])):
             print(sampled["points"][i].shape, sampled["names"][i])
+
+        road_plane = get_road_plane(os.path.join(KITTI_PATH, 'planes', '%s.txt' % index))
+        calib_dict = _get_calib_dict(index)
+        #sampled = move_samples_to_road_plane(sampled, road_plane, calib_dict)
+
+        # (N, 7) -> (N, 8, 3)
         sampled_gt_boxes = sampled["boxes_centers3d"]
         print(sampled_gt_boxes.shape)
-        # (N, 7) -> (N, 8, 3)
         sampled_boxes_corners3d = lidar_center_to_corner_box3d(sampled_gt_boxes)
 
-        all_box3d = np.concatenate((fake_boxes_corners3d, sampled_boxes_corners3d), axis=0)
+        all_box3d = np.concatenate((gt_boxes_corners3d, sampled_boxes_corners3d), axis=0)
         view_pc(np.concatenate(sampled['points'], axis=0), all_box3d)
