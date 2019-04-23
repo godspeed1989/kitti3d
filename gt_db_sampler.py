@@ -474,7 +474,7 @@ if __name__ == '__main__':
 
         road_plane = get_road_plane(os.path.join(KITTI_PATH, 'planes', '%s.txt' % index))
         calib_dict = _get_calib_dict(index)
-        #sampled = move_samples_to_road_plane(sampled, road_plane, calib_dict)
+        sampled = move_samples_to_road_plane(sampled, road_plane, calib_dict)
 
         # (N, 7) -> (N, 8, 3)
         sampled_gt_boxes = sampled["boxes_centers3d"]

@@ -112,7 +112,7 @@ para.crop_pc_by_fov = True
 para.augment_data_use_db = True
 para.augment_data_by_flip = False
 para.filter_sampled_by_ground = True
-para.move_sampled_to_road_plane = False
+para.move_sampled_to_road_plane = True
 para.augment_max_samples = 15
 para.remove_points_after_sample = False
 
