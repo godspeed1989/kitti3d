@@ -87,7 +87,7 @@ def train_net(config_name, device, val=False):
         batch_size=1, shuffle=False, augment=False,
         frame_range=config['frame_range'], workers=config['num_workers'])
 
-    net, criterion, optimizer, scheduler = build_model(config, device, train=True)
+    net, criterion, optimizer, scheduler = build_model(config, device, True, train_data_loader)
 
     print_log(dict2str(config))
     print_log(dict2str(para))
@@ -106,7 +106,7 @@ def train_net(config_name, device, val=False):
     for epoch in range(max_epochs):
         train_loss = 0
         num_samples = 0
-        scheduler.step()
+        scheduler.step(epoch)
         print_log("Learning Rate for Epoch {} is {} ".format(epoch + 1, scheduler.get_lr()))
         if para.corner_loss and epoch >= para.corner_loss_start:
             print_log('Loc Corner Loss...')

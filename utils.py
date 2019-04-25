@@ -8,8 +8,14 @@ import json
 import os.path
 import numba
 import ipdb
-from params import para
+import torch.optim as optim
+import torch.nn as nn
+from functools import partial
 
+from train_utils.fastai_optim import OptimWrapper
+from train_utils import learning_schedules_fastai as lsf
+
+from params import para
 from model import PIXOR, PIXOR_RFB
 from model_sp import PIXOR_SPARSE
 from loss import CustomLoss, MultiTaskLoss, GHM_Loss
@@ -312,7 +318,7 @@ def remove_points_in_boxes(points, rbbox_corners):
     points = points[np.logical_not(indices.any(-1))]
     return points, np.logical_not(indices.any(-1))
 
-def build_model(config, device, train=True):
+def build_model(config, device, train=True, train_loader=None):
     if para.net == 'PIXOR':
         net = PIXOR(use_bn=config['use_bn'], input_channels=para.input_channels).to(device)
     elif para.net == 'PIXOR_RFB':
@@ -340,8 +346,28 @@ def build_model(config, device, train=True):
                                      lr=config['learning_rate'])
     elif config['optimizer'] == 'SGD':
         optimizer = torch.optim.SGD(net.parameters(), lr=config['learning_rate'], momentum=config['momentum'])
+    elif config['optimizer'] == 'adam_onecycle':
+        def children(m: nn.Module):
+            return list(m.children())
+
+        def num_children(m: nn.Module) -> int:
+            return len(children(m))
+
+        flatten_model = lambda m: sum(map(flatten_model, m.children()), []) if num_children(m) else [m]
+        get_layer_groups = lambda m: [nn.Sequential(*flatten_model(m))]
+
+        optimizer_func = partial(optim.Adam, betas=(0.9, 0.99))
+        optimizer = OptimWrapper.create(
+            optimizer_func, 3e-3, get_layer_groups(net), wd=0.001, true_wd=True, bn_wd=True
+        )
     else:
         raise NotImplementedError
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['lr_decay_every'], gamma=0.5)
+
+    if config['optimizer'] == 'adam_onecycle':
+        total_steps = len(train_loader) * config['max_epochs']
+        scheduler = lsf.OneCycle(
+            optimizer, total_steps, config['learning_rate'], list([0.95, 0.85]), 10.0, 0.4)
+    else:
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['lr_decay_every'], gamma=0.5)
 
     return net, criterion, optimizer, scheduler
