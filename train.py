@@ -87,7 +87,8 @@ def train_net(config_name, device, val=False):
         batch_size=1, shuffle=False, augment=False,
         frame_range=config['frame_range'], workers=config['num_workers'])
 
-    net, criterion, optimizer, scheduler = build_model(config, device, True, train_data_loader)
+    net, criterion, optimizer, scheduler, bnm_scheduler = \
+        build_model(config, device, True, train_data_loader)
 
     print_log(dict2str(config))
     print_log(dict2str(para))
@@ -103,6 +104,7 @@ def train_net(config_name, device, val=False):
         decoder = Decoder()
 
     start_time = time.time()
+    it = 0
     for epoch in range(max_epochs):
         train_loss = 0
         num_samples = 0
@@ -121,6 +123,9 @@ def train_net(config_name, device, val=False):
             else:
                 label_map_mask = None
             optimizer.zero_grad()
+
+            bnm_scheduler.step(it)
+            it += 1
 
             # net output is (B,H,W,C), label_map is (B,H,W,C)
             # decoder input is (B,6,H,W), output is (B,8,H,W)
