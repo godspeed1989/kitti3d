@@ -270,7 +270,7 @@ class DataBaseSampler:
         samples = copy.deepcopy(all_samples)
         return samples
 
-    def load_sample_points(self, all_samples):
+    def load_sample_points(self, all_samples, augment=True):
         s_points_list = []
         for info in all_samples:
             # print(info.keys())
@@ -282,10 +282,14 @@ class DataBaseSampler:
                 assert 0
             # print(s_points.shape, info["num_points_in_gt"])
             s_points[:, :3] += info["box3d_lidar"][:3]
+            if augment:
+                clip = 0.01
+                jittered_data = np.clip(0.01 * np.random.randn(s_points.shape[0], 3), -1*clip, clip)
+                s_points[:, :3] += jittered_data
             s_points_list.append(s_points)
         return s_points_list
 
-    def sample_class_v2(self, sampled, gt_boxes):
+    def sample_class_v2(self, sampled, sampled_points, gt_boxes):
         num_gt = gt_boxes.shape[0]
         num_sampled = len(sampled)
         # BEV: ground truth
@@ -302,13 +306,15 @@ class DataBaseSampler:
         coll_mat[diag, diag] = False
 
         valid_samples = []
+        valid_points = []
         for i in range(num_gt, num_gt + num_sampled):
             if coll_mat[i].any():
                 coll_mat[i] = False
                 coll_mat[:, i] = False
             else:
                 valid_samples.append(sampled[i - num_gt])
-        return valid_samples
+                valid_points.append(sampled_points[i - num_gt])
+        return valid_samples, valid_points
 
     def sample_all(self, class_name, gt_boxes, max_sample=15):
         '''
@@ -322,9 +328,24 @@ class DataBaseSampler:
             sample_cnt = max_sample - gt_boxes.shape[0]
         else:
             return None
+
         all_samples = self.sample_n_obj(class_name, sample_cnt)
-        sampled_cls = self.sample_class_v2(all_samples,
-                                           gt_boxes)
+        all_points = self.load_sample_points(all_samples)
+
+        # random translation, point_transform seems bad
+        for i in range(len(all_samples)):
+            tx = np.random.uniform(0, 0.1)
+            ty = np.random.uniform(0, 0.1)
+            r_boxes_centers3d = all_samples[i]['box3d_lidar'].copy()
+            r_boxes_centers3d[:2] = r_boxes_centers3d[:2] + [tx, ty]
+            all_samples[i]['box3d_lidar'] = r_boxes_centers3d
+            #
+            r_points = all_points[i].copy()
+            r_points[:, :2] = r_points[:, :2] + [tx, ty]
+            all_points[i] = r_points
+
+        # filter bad samples
+        sampled_cls, points_cls = self.sample_class_v2(all_samples, all_points, gt_boxes)
         if len(sampled_cls) > 0:
             if len(sampled_cls) == 1:
                 sampled_gt_boxes = sampled_cls[0]["box3d_lidar"][np.newaxis, ...]
@@ -334,39 +355,14 @@ class DataBaseSampler:
             # TODO: just to call lidar_center_to_corner_box3d right
             sampled_gt_boxes[:,6] = -sampled_gt_boxes[:,6] - np.pi/2
 
-            s_points_list = self.load_sample_points(sampled_cls)
             ret = {
                 "names": [s["name"] for s in sampled_cls],
                 "boxes_centers3d": sampled_gt_boxes,
-                "points": s_points_list,
+                "points": points_cls,
             }
         else:
             ret = None
 
-        # random rotate along z-axis
-        if ret is not None:
-            r_boxes_centers3d_list = []
-            r_points_list = []
-            boxes_centers3d = ret["boxes_centers3d"].copy()
-            for i, points in enumerate(s_points_list):
-                angle = np.random.uniform(-np.pi / 12, np.pi / 12)
-                #
-                r_boxes_corners3d = lidar_center_to_corner_box3d(boxes_centers3d[[i],])[0] #(8,3)
-                center = np.mean(r_boxes_corners3d[:, 0:3], axis=0)
-                r_boxes_corners3d = point_transform(r_boxes_corners3d - center, 0, 0, 0, rz=angle) + center
-                r_boxes_centers3d = corner_to_center_box3d(r_boxes_corners3d)
-                # TODO: just to call lidar_center_to_corner_box3d right
-                r_boxes_centers3d[6] = -r_boxes_centers3d[6]
-                r_boxes_centers3d[3:5] = r_boxes_centers3d[4:2:-1]
-                # convert from center-z to kitti bottom-z
-                r_boxes_centers3d[2] -= r_boxes_centers3d[5] / 2.0
-                r_boxes_centers3d_list.append(r_boxes_centers3d)
-                #
-                r_points = points.copy()
-                r_points[:, 0:3] = point_transform(r_points[:, 0:3] - center, 0, 0, 0, rz=angle) + center
-                r_points_list.append(r_points)
-            ret["boxes_centers3d"] = np.stack(r_boxes_centers3d_list)
-            ret["points"] = r_points_list
         return ret
 
 
