@@ -536,9 +536,9 @@ class KITTI(Dataset):
                             ret.append(int(s))
                     ret = np.array(ret, dtype=np.int32)
                     return np.reshape(ret, [-1, 2])
-                def load_anno(idx):
+                def load_anno(name):
                     ANNO_DST = os.path.join(KITTI_PATH, 'training/grd_mask')
-                    filename = os.path.join(ANNO_DST, index+'.txt')
+                    filename = os.path.join(ANNO_DST, name+'.txt')
                     ret = []
                     if os.path.exists(filename):
                         with open(filename, 'r') as f:
@@ -635,14 +635,6 @@ class KITTI(Dataset):
                 all_corners = point_transform(all_corners, tx, ty, tz)
                 labelmap_corners = point_transform(labelmap_corners, tx, ty, tz)
                 labelmap_mask_corners = point_transform(labelmap_mask_corners, tx, ty, tz)
-        if np.random.choice(2):
-            # global scaling
-            factor = np.random.uniform(0.95, 1.05)
-            scan[:, 0:3] = scan[:, 0:3] * factor
-            if num_target > 0:
-                all_corners = all_corners * factor
-                labelmap_corners = labelmap_corners * factor
-                labelmap_mask_corners = labelmap_mask_corners * factor
         if np.random.choice(2) and para.augment_data_by_flip:
             # XY flip
             scan[:, 0] = self.geometry['W2'] - scan[:, 0] + self.geometry['W1']
