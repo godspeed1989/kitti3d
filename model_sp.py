@@ -467,11 +467,11 @@ class RPNV2(nn.Module):
                  use_norm=True,
                  decode=False,
                  num_class=1,
-                 layer_nums=[5, 5],
-                 layer_strides=[1, 2],
-                 num_filters=[128, 256],
-                 upsample_strides=[1, 2],
-                 num_upsample_filters=[256, 256],
+                 layer_nums=[3, 3, 3],
+                 layer_strides=[1, 2, 2],
+                 num_filters=[128, 256, 256],
+                 upsample_strides=[1, 2, 4],
+                 num_upsample_filters=[256, 256, 256],
                  num_input_features=128,
                  name='rpn'):
         super(RPNV2, self).__init__()
