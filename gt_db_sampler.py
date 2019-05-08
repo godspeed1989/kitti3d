@@ -363,32 +363,6 @@ class DataBaseSampler:
         else:
             ret = None
 
-        # random rotate along z-axis
-        if ret is not None:
-            r_boxes_centers3d_list = []
-            r_points_list = []
-            boxes_centers3d = ret["boxes_centers3d"].copy()
-            s_points_list = ret['points']
-            for i, points in enumerate(s_points_list):
-                angle = np.random.uniform(-np.pi / 8, np.pi / 8)
-                #
-                r_boxes_corners3d = lidar_center_to_corner_box3d(boxes_centers3d[[i],])[0] #(8,3)
-                center = np.mean(r_boxes_corners3d[:, 0:3], axis=0)
-                r_boxes_corners3d = point_transform(r_boxes_corners3d - center, 0, 0, 0, rz=angle) + center
-                r_boxes_centers3d = corner_to_center_box3d(r_boxes_corners3d)
-                # TODO: just to call lidar_center_to_corner_box3d right
-                r_boxes_centers3d[6] = -r_boxes_centers3d[6]
-                r_boxes_centers3d[3:5] = r_boxes_centers3d[4:2:-1]
-                # convert from center-z to kitti bottom-z
-                r_boxes_centers3d[2] -= r_boxes_centers3d[5] / 2.0
-                r_boxes_centers3d_list.append(r_boxes_centers3d)
-                #
-                r_points = points.copy()
-                r_points[:, 0:3] = point_transform(r_points[:, 0:3] - center, 0, 0, 0, rz=angle) + center
-                r_points_list.append(r_points)
-            ret["boxes_centers3d"] = np.stack(r_boxes_centers3d_list)
-            ret["points"] = r_points_list
-
         return ret
 
 
