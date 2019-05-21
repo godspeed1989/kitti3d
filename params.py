@@ -7,8 +7,8 @@ para = EasyDict()
 # 5: r, x, y, w, l
 para.box_code_len = 6
 if para.box_code_len == 6:
-    para.target_mean = np.array([0.799, -0.053,  0.194,  0.192,  0.487,  1.37], dtype=np.float32)
-    para.target_std_dev = np.array([0.325, 0.504, 0.537, 0.389, 0.064, 0.109], dtype=np.float32)
+    para.target_mean = np.array([0, 0, 0, 0, 0, 0], dtype=np.float32)
+    para.target_std_dev = np.array([1, 1, 1, 1, 1, 1], dtype=np.float32)
 elif para.box_code_len == 5:
     para.target_mean = np.array([0.0, 0.194, 0.192, 0.487, 1.37 ], dtype=np.float32)
     para.target_std_dev = np.array([1.0, 0.537, 0.389, 0.064, 0.109], dtype=np.float32)
@@ -27,8 +27,8 @@ if para.estimate_zh:  # append [z,h]
     para.box_code_len += 2 # 8, 7
     para.target_mean = np.resize(para.target_mean, para.box_code_len)
     para.target_std_dev = np.resize(para.target_std_dev, para.box_code_len)
-    para.target_mean[-2:] = np.array([-0.74,  0.456], dtype=np.float32)
-    para.target_std_dev[-2:] = np.array([0.35, 0.085], dtype=np.float32)
+    para.target_mean[-2:] = np.array([0,  0], dtype=np.float32)
+    para.target_std_dev[-2:] = np.array([1, 1], dtype=np.float32)
 
 para.L1 = -40.0
 para.L2 = 40.0
@@ -97,7 +97,7 @@ if para.channel_type == 'sparse':
 para.object_list = ['Car']
 para.collision_object_list = ['Car', 'Van', 'Truck', 'Pedestrian', 'Cyclist']
 
-para.box_in_labelmap_ratio = 0.6
+para.box_in_labelmap_ratio = 0.9
 para.use_labelmap_mask = False
 if para.use_labelmap_mask:
     para.box_in_labelmap_ratio = 0.5
